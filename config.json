@@ -1,0 +1,13 @@
+{
+  "FLASK_CONFIG": {
+    "FLASK_HOST": "0.0.0.0",
+    "FLASK_PORT": 5500
+  },
+  "ARANGO_CONFIG": {
+    "ARANGO_HOST": "localhost",
+    "ARANGO_PORT": 8529,
+    "ARANGO_DB": "SOF-viz",
+    "ARANGO_USERNAME": "root",
+    "ARANGO_PASSWORD": "root"
+  }
+}
