@@ -1,3 +1,7 @@
+# Project relevant
+
+auth_admin.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
