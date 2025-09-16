@@ -73,6 +73,13 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
 
             software_document = softwares_collection.createDocument(mention)
             software_document.save()
+
+            # Create edge from document to software
+            edge_doc_soft = doc_soft_edge.createEdge()
+            edge_doc_soft['_from'] = document_document._id
+            edge_doc_soft['_to'] = software_document._id
+            edge_doc_soft.save()
+
     return True
 
             # Create e
