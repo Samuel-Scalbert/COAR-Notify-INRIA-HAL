@@ -1,7 +1,6 @@
-import os
 import json
 import csv
-from tqdm import tqdm
+from pyArango.connection import Connection
 
 def check_or_create_collection(db, collection_name, collection_type='Collection'):
     """Return collection if exists, else create it."""
@@ -74,6 +73,21 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
 
             software_document = softwares_collection.createDocument(mention)
             software_document.save()
+    return True
 
             # Create e
 
+db = None
+
+def init_db(app):
+    global db
+    conn = Connection(
+        arangoURL=f"http://{app.config['ARANGO_HOST']}:{app.config['ARANGO_PORT']}",
+        username=app.config["ARANGO_USERNAME"],
+        password=app.config["ARANGO_PASSWORD"]
+    )
+
+    if not conn.hasDatabase(app.config["ARANGO_DB"]):
+        conn.createDatabase(name=app.config["ARANGO_DB"])
+    db = conn[app.config["ARANGO_DB"]]
+    return db
