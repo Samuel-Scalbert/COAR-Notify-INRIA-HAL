@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Received Notifications</title>
+</head>
+<body>
+    <h1>Received COAR Notifications</h1>
+    <ul>
+        {% for notif in notifications %}
+            <li>
+                <strong>Type:</strong> {{ notif.type }}<br>
+                <strong>Actor:</strong> {{ notif.actor.id if notif.actor else 'N/A' }}<br>
+                <pre>{{ notif | tojson(indent=2) }}</pre>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
