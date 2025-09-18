@@ -1,4 +1,5 @@
 from coarnotify.client import COARNotifyClient
+from coarnotify.core.activitystreams2 import ActivityStreamsTypes
 from coarnotify.patterns import AnnounceRelationship
 from coarnotify.core.notify import NotifyActor, NotifyObject, NotifyService
 import json
@@ -15,36 +16,36 @@ class SoftwareInArticleNotifier:
         actor = NotifyActor()
         actor.id = actor_id
         actor.name = actor_name
-        actor.set_property("type", ActivityStreamsTypes.ORGANIZATION)
-        self.announcement.set_property("actor", actor)
+        actor.type = ActivityStreamsTypes.ORGANIZATION
+        self.announcement.actor = actor
 
         # Object (Relationship)
         obj = NotifyObject()
         obj.id = software_id
-        obj.set_property("type", "Relationship")
-        obj.set_property("as:subject", article_id)
-        obj.set_property("as:object", software_id)
-        obj.set_property("as:relationship", relationship_uri)
-        self.announcement.set_property("object", obj)
+        obj.type =  ActivityStreamsTypes.RELATIONSHIP
+        obj.subject =  article_id
+        obj.object = software_id
+        obj.relationship = relationship_uri
+        self.announcement.obj = obj
 
         # Context (Relationship)
         cont = NotifyObject()
         cont.id = "https://doi.org/10.1101/2022.10.06.511170"
-        self.announcement.set_property("context", cont)
+        self.announcement.context = cont
 
         # Origin
         origin = NotifyService()
         origin.id = origin_service_id
         origin.inbox = origin_inbox
-        origin.set_property("type", "Service")
-        self.announcement.set_property("origin", origin)
+        origin.type = ActivityStreamsTypes.SERVICE
+        self.announcement.origin = origin
 
         # Target
         target = NotifyService()
         target.id = target_service_id
         target.inbox = target_inbox
-        target.set_property("type", "Service")
-        self.announcement.set_property("target", target)
+        target.type = ActivityStreamsTypes.SERVICE
+        self.announcement.target = target
 
         # Client
         self.client = COARNotifyClient()
