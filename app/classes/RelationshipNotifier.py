@@ -5,7 +5,7 @@ from coarnotify.core.notify import NotifyActor, NotifyObject, NotifyService
 import json
 
 class SoftwareInArticleNotifier:
-    def __init__(self, actor_id, actor_name, software_id, article_id,
+    def __init__(self, actor_id, actor_name, context_id,software_id, article_id,
                  relationship_uri, origin_service_id, origin_inbox,
                  target_service_id, target_inbox):
 
@@ -30,7 +30,7 @@ class SoftwareInArticleNotifier:
 
         # Context (Relationship)
         cont = NotifyObject()
-        cont.id = "https://doi.org/10.1101/2022.10.06.511170"
+        cont.id = context_id
         self.announcement.context = cont
 
         # Origin
