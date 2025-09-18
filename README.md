@@ -1,4 +1,4 @@
-# COAR-Notify-INRIA-HAL-
+# COAR-Notify-INRIA-HAL
 
 ## API
 
