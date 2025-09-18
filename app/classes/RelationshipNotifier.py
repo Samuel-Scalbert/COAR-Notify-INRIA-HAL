@@ -15,7 +15,7 @@ class SoftwareInArticleNotifier:
         actor = NotifyActor()
         actor.id = actor_id
         actor.name = actor_name
-        actor.set_property("type", "Organization")
+        actor.set_property("type", ActivityStreamsTypes.ORGANIZATION)
         self.announcement.set_property("actor", actor)
 
         # Object (Relationship)

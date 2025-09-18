@@ -1,4 +1,6 @@
 from app.classes.RelationshipNotifier import SoftwareInArticleNotifier
+
+
 import json
 if __name__ == "__main__":
     notifier = SoftwareInArticleNotifier(
@@ -13,6 +15,5 @@ if __name__ == "__main__":
         target_inbox="http://127.0.0.1:5500/inbox"
     )
 
-    data = json.dumps(notifier.to_jsonld())
     # Send the notification
     notifier.send()
