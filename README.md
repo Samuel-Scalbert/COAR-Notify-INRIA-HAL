@@ -2,16 +2,16 @@
 
 ## API
 
-software's route:
-- /api/softwares/status
-- /api/softwares/<id_software>
-- /api/softwares_mention/<id_mention>
+Software mentions' routes:
+- /api/software/status
+- /api/software/<id_software>
+- /api/software_mention/<id_mention>
 
-documents' route:
-- /api/documents/status
-- /api/documents/<id>
-- /api/documents/<id_document>/softwares
-- /api/documents/<id_document>/softwares/<id_software>
+Documents' routes:
+- /api/document/status
+- /api/document/<id>
+- /api/document/<id_document>/software
+- /api/document/<id_document>/software/<id_software>
 
 
 ## Notification
