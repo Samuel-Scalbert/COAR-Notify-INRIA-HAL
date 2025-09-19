@@ -1,66 +1,84 @@
-from coarnotify.client import COARNotifyClient
-from coarnotify.core.activitystreams2 import ActivityStreamsTypes
-from coarnotify.patterns import AnnounceReview
-from coarnotify.core.notify import NotifyActor, NotifyObject, NotifyService, Properties
-
 import json
 
-class SoftwareInArticleNotifier:
-    def __init__(self, actor_id, actor_name, context_id,software_id, article_id,
-                 relationship_uri, origin_service_id, origin_inbox,
-                 target_service_id, target_inbox):
+import requests
 
-        # Create announcement
-        self.announcement = AnnounceReview()
 
-        # Actor
-        actor = NotifyActor()
-        actor.id = actor_id
-        actor.name = actor_name
-        actor.type = ActivityStreamsTypes.SERVICE
-        self.announcement.actor = actor
+class SoftwareMentionNotification:
+    def __init__(self, payload: dict):
+        self._payload = payload
 
-        '''context = {
-            "id": context_id,
-            "type": "AnnounceReviewContext",
-        }
-        self.announcement.set_property(Properties.CONTEXT, context)'''
+    def to_jsonld(self) -> dict:
+        return self._payload
 
-        # Object
-        obj = NotifyService()
-        '''obj.cite_as =  "https://doi.org/10.5063/schema/codemeta-2.0"
-        obj.id = "oai:HAL:hal-03685380v1"
-        # citation sub-object
-        citation = {
-            "type": "SoftwareSourceCode",
-            "name": "PyPDEVS",
-            "codeRepository": "https://github.com/capocchi/PythonPDEVS",
-            "referencePublication": None
-        }
-        # assign with prefix in the key
-        obj.set_property("sorg:citation", citation)'''
-        obj.id = origin_service_id
-        self.announcement.obj = obj
 
-        # Origin
-        origin = NotifyService()
-        origin.id = origin_service_id
-        origin.inbox = origin_inbox
-        origin.type = ActivityStreamsTypes.SERVICE
-        self.announcement.origin = origin
+class SoftwareMentionNotifier:
+    actor_id = "https://datalake.inria.fr"
+    actor_name = "Datalake Inria"
+    origin_inbox = "https://datalake.inria.fr/inbox"
 
-        # Target
-        target = NotifyService()
-        target.id = target_service_id
-        target.inbox = target_inbox
-        target.type = ActivityStreamsTypes.SERVICE
-        self.announcement.target = target
-
-        # Client
-        self.client = COARNotifyClient()
+    # Attribute annotations for static analyzers
+    notification: SoftwareMentionNotification
+    target_inbox: str
+    def __init__(
+            self,
+            document_id,
+            software_id,
+            mention_name,
+            mention_type,
+            mention_context,
+            mention_url,
+            target_id,
+            target_inbox
+    ):
         self.target_inbox = target_inbox
 
+        notification_id = f"{self.actor_id}/notifications/{document_id}-{software_id}"
+
+        payload = {
+            "@context": [
+                "https://www.w3.org/ns/activitystreams",
+                "https://w3id.org/notify#"
+            ],
+            "id": notification_id,
+            "type": ["Announce", "coar-notify:ReviewAction"],
+            "actor": {
+                "id": self.actor_id,
+                "type": "Service",
+                "name": self.actor_name
+            },
+            "origin": {
+                "id": self.actor_id,
+                "type": "Service",
+                "inbox": self.origin_inbox
+            },
+            "target": {
+                "id": target_id,
+                "type": "Service",
+                "inbox": target_inbox
+            },
+            "object": {
+                "mentionType": mention_type,
+                "mentionContext": mention_context,
+                "cite_as": document_id,
+                "sorg:citation":
+                    {
+                        "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+                        "type": "SoftwareSourceCode",
+                        "name": mention_name,
+                        "codeRepository": mention_url
+                        # "referencePublication":
+                    },
+            },
+            "context": {
+                "id": document_id
+            }
+        }
+
+        self.notification = SoftwareMentionNotification(payload)
+
     def send(self, validate=True):
-        """Send the notification via COARNotifyClient"""
-        print(f"➡️ Sending notification to {self.target_inbox}")
-        return self.client.send(self.announcement, self.target_inbox, validate=validate)
+        headers = {"Content-Type": "application/ld+json"}
+        data = json.dumps(self.notification.to_jsonld())
+        resp = requests.post(self.target_inbox, data=data, headers=headers, timeout=10)
+        resp.raise_for_status()
+        return resp

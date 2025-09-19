@@ -1,24 +1,22 @@
-from app.classes.RelationshipNotifier import SoftwareInArticleNotifier
+from app.classes.RelationshipNotifier import SoftwareMentionNotifier
 
 
-import json
 if __name__ == "__main__":
-    notifier = SoftwareInArticleNotifier(
-        actor_id="https://ror.org/02kvxyf05",
-        actor_name="Inria",
-        context_id="https://hal.science/hal-01131395v1",
-        software_id="urn:uuid:22222-abcd",
-        article_id="https://www.science.org/doi/10.1126/scitranslmed.adn2401",
-        relationship_uri="http://purl.org/vocab/frbr/core#adaption",
-        origin_service_id="https://ror.org/02kvxyf05",
-        origin_inbox="http://127.0.0.1:5500/inbox",
-        target_service_id="https://archive.softwareheritage.org",
-        target_inbox="http://127.0.0.1:5500/inbox"
+    notifier = SoftwareMentionNotifier(
+        "https://hal.science/hal-01131395v1",
+        "urn:uuid:22222-abcd",
+        "Grobid",
+        "created",
+        "The software is used in the research described by the article.",
+        "https://github.com/kermitt2/grobid",
+        "https://preprod.archives-ouvertes.fr",
+        "https://inbox-preprod.archives-ouvertes.fr"
+        # "http://127.0.0.1:5500/inbox"
     )
 
-    # Send the notification
-    print(notifier.announcement.obj.to_jsonld())
-    notifier.send()
+    # Always output the payload
+    print("Payload:")
+    print(notifier.notification.to_jsonld())
 
 '''
   "object": {
