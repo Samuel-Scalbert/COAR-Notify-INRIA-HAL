@@ -1,7 +1,8 @@
 from coarnotify.client import COARNotifyClient
 from coarnotify.core.activitystreams2 import ActivityStreamsTypes
 from coarnotify.patterns import AnnounceReview
-from coarnotify.core.notify import NotifyActor, NotifyObject, NotifyService
+from coarnotify.core.notify import NotifyActor, NotifyObject, NotifyService, Properties
+
 import json
 
 class SoftwareInArticleNotifier:
@@ -19,14 +20,15 @@ class SoftwareInArticleNotifier:
         actor.type = ActivityStreamsTypes.SERVICE
         self.announcement.actor = actor
 
-        # Context (Relationship)
-        cont = NotifyObject()
-        cont.id = context_id
-        self.announcement.context = cont
+        '''context = {
+            "id": context_id,
+            "type": "AnnounceReviewContext",
+        }
+        self.announcement.set_property(Properties.CONTEXT, context)'''
 
         # Object
-        obj = NotifyObject()
-        obj.cite_as =  "https://doi.org/10.5063/schema/codemeta-2.0"
+        obj = NotifyService()
+        '''obj.cite_as =  "https://doi.org/10.5063/schema/codemeta-2.0"
         obj.id = "oai:HAL:hal-03685380v1"
         # citation sub-object
         citation = {
@@ -36,9 +38,9 @@ class SoftwareInArticleNotifier:
             "referencePublication": None
         }
         # assign with prefix in the key
-        obj.set_property("sorg:citation", citation)
-        self.announcement.actor = actor
-        print(obj.to_jsonld())
+        obj.set_property("sorg:citation", citation)'''
+        obj.id = origin_service_id
+        self.announcement.obj = obj
 
         # Origin
         origin = NotifyService()

@@ -17,6 +17,7 @@ if __name__ == "__main__":
     )
 
     # Send the notification
+    print(notifier.announcement.obj.to_jsonld())
     notifier.send()
 
 '''
