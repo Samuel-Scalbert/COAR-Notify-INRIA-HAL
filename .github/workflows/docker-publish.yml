@@ -12,6 +12,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 app run.py
+
+      # Optionally, check that the code can be imported (basic build check)
+      - name: Check Python build (import test)
+        run: |
+          python -c "import app.app"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -28,3 +48,21 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/coar-notify-inria-hal:latest
 
+# Documentation
+# -------------
+# This workflow builds and pushes a Docker image to Docker Hub on every push to the main branch.
+#
+# Prerequisites:
+# - Set the following secrets in your GitHub repository:
+#   - DOCKERHUB_USERNAME: Your Docker Hub username
+#   - DOCKERHUB_TOKEN: Your Docker Hub access token or password
+#
+# Usage:
+# 1. Push code to the main branch.
+# 2. The workflow will automatically build the Docker image using the Dockerfile in the repository root.
+# 3. The image will be pushed to Docker Hub as <DOCKERHUB_USERNAME>/coar-notify-inria-hal:latest
+#
+# To use a different image name or tag, edit the 'tags' field in the workflow.
+#
+# Example Docker Hub pull command:
+#   docker pull <DOCKERHUB_USERNAME>/coar-notify-inria-hal:latest
