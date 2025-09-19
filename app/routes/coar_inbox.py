@@ -3,9 +3,9 @@ import json
 from flask import request, jsonify, render_template
 from app.app import app
 from coarnotify.factory import COARNotifyFactory
-from coarnotify.exceptions import NotifyException
+from app.utils.notification_handler import accept_notification, reject_notification
 
-# Simple in-memory store of notifications
+
 received_notifications = []
 
 @app.route("/inbox", methods=["POST"])
@@ -19,6 +19,11 @@ def receive_notification():
 
     # Store the notification for display
     received_notifications.append(notification)
+
+    if getattr(notification, "type", None)=="Accept":
+        accept_notification(notification.to_jsonld())
+    if getattr(notification, "type", None)=="Reject":
+        reject_notification(notification.to_jsonld())
 
     # Respond with the type and actor info
     return jsonify({

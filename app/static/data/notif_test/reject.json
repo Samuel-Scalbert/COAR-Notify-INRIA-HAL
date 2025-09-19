@@ -1,0 +1,74 @@
+{
+    "@context":
+    [
+        "https://www.w3.org/ns/activitystreams",
+        "https://coar-notify.net"
+    ],
+    "origin":
+    {
+        "type": "Service",
+        "id": "https://hal.halpreprod.archives-ouvertes.fr/",
+        "inbox": "https://inbox-preprod.archives-ouvertes.fr/"
+    },
+    "id": "urn:uuid:6409a7fa-228a-41dd-ba8a-ac085d76033b",
+    "actor":
+    {
+        "id": "https://hal.science",
+        "name": "HAL Open Archive",
+        "type": "Service"
+    },
+    "object":
+    {
+        "id": "urn:uuid:03edc4c2-ecb0-4077-b12b-4f4a2b01ef37",
+        "type":
+        [
+            "Offer",
+            "coar-notify:ReviewAction"
+        ],
+        "actor":
+        {
+            "id": "https://datalake.inria.fr",
+            "name": "Datalake INRAE",
+            "type": "Service"
+        },
+        "object":
+        {
+            "id": "oai:HAL:hal-01478788",
+            "mentionType": "used",
+            "ietf:cite-as": null,
+            "sorg:citation":
+            {
+                "name": "DivRank",
+                "type": "SoftwareSourceCode",
+                "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+                "codeRepository": "https://github.com/capocchi/DEVSimPy",
+                "referencePublication": null
+            },
+            "mentionContext": "DEVSimPy (https://github.com/capocchi/DEVSimPy, Python Simulator for DEVS models) s a user-friendly interface (based on wxPython graphic library) for collaborative",
+            "mentionConfidence": "99.87"
+        },
+        "origin":
+        {
+            "id": "https://datalake.inria.fr",
+            "type": "Service",
+            "inbox": "https://datalake.inria.fr/inbox/"
+        },
+        "target":
+        {
+            "id": "https://inria.hal.science",
+            "type": "Service",
+            "inbox": "https://inbox.hal.science"
+        }
+    },
+    "target":
+    {
+        "id": "https://datalake.inria.fr",
+        "inbox": "https://inbox-preprod.archives-ouvertes.fr/",
+        "type": "Service"
+    },
+    "type":
+    [
+        "Reject"
+    ],
+    "inReplyTo": "urn:uuid:03edc4c2-ecb0-4077-b12b-4f4a2b01ef37"
+}

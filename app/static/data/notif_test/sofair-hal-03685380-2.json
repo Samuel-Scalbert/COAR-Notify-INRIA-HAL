@@ -1,0 +1,47 @@
+{
+    "@context":
+    [
+        "https://www.w3.org/ns/activitystreams",
+        "https://purl.org/coar/notify"
+    ],
+    "actor":
+    {
+        "id": "https://datalake.inria.fr",
+        "name": "Datalake INRIA",
+        "type": "Service"
+    },
+    "id": "urn:uuid:03edc4c2-ecb0-4077-b12b-4f4a2b01ef38",
+    "object":
+    {
+        "id": "oai:HAL:hal-03685380v1",
+        "ietf:cite-as": null,
+        "sorg:citation":
+        {
+            "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+            "type": "SoftwareSourceCode",
+            "name": "PyPDEVS",
+            "codeRepository": "https://github.com/capocchi/PythonPDEVS",
+            "referencePublication": null
+        },
+        "mentionConfidence": "99.7",
+        "mentionType": "used",
+        "mentionContext": "language and based on the PyDEVS and PyPDEVS  (https://github.com/capocchi/PythonPDEVS, the Parallel DEVS implementation of PyDEVS)"
+    },
+    "origin":
+    {
+        "id": "https://datalake.inria.fr",
+        "inbox": "https://datalake.inria.fr/inbox/",
+        "type": "Service"
+    },
+    "target":
+    {
+        "id": "https://inria.hal.science",
+        "inbox": "https://inbox.hal.science",
+        "type": "Service"
+    },
+    "type":
+    [
+        "Offer",
+        "coar-notify:ReviewAction"
+    ]
+}

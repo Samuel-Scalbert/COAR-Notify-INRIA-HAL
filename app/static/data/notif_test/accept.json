@@ -1,0 +1,74 @@
+{
+    "@context":
+    [
+        "https://www.w3.org/ns/activitystreams",
+        "https://coar-notify.net"
+    ],
+    "origin":
+    {
+        "type": "Service",
+        "id": "https://hal.halpreprod.archives-ouvertes.fr/",
+        "inbox": "https://inbox-preprod.archives-ouvertes.fr/"
+    },
+    "id": "urn:uuid:df91d5b3-f1b9-4e0a-8d43-be86b290c601",
+    "actor":
+    {
+        "id": "https://hal.science",
+        "name": "HAL Open Archive",
+        "type": "Service"
+    },
+    "object":
+    {
+        "id": "urn:uuid:03edc4c2-ecb0-4077-b12b-4f4a2b01ef38",
+        "type":
+        [
+            "Offer",
+            "coar-notify:ReviewAction"
+        ],
+        "actor":
+        {
+            "id": "https://datalake.inria.fr",
+            "name": "Datalake INRAE",
+            "type": "Service"
+        },
+        "object":
+        {
+            "id": "oai:HAL:hal-01478788",
+            "mentionType": "used",
+            "ietf:cite-as": null,
+            "sorg:citation":
+            {
+                "name": "DivRank",
+                "type": "SoftwareSourceCode",
+                "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+                "codeRepository": "https://github.com/capocchi/PythonPDEVS",
+                "referencePublication": null
+            },
+            "mentionContext": "language and based on the PyDEVS and PyPDEVS  (https://github.com/capocchi/PythonPDEVS, the Parallel DEVS implementation of PyDEVS)",
+            "mentionConfidence": "99.7"
+        },
+        "origin":
+        {
+            "id": "https://datalake.inria.fr",
+            "type": "Service",
+            "inbox": "https://datalake.inria.fr/inbox/"
+        },
+        "target":
+        {
+            "id": "https://inria.hal.science",
+            "type": "Service",
+            "inbox": "https://inbox.hal.science"
+        }
+    },
+    "target":
+    {
+        "id": "https://datalake.inria.fr",
+        "inbox": "https://inbox-preprod.archives-ouvertes.fr/",
+        "type": "Service"
+    },
+    "type":
+    [
+        "Accept"
+    ],
+    "inReplyTo": "urn:uuid:03edc4c2-ecb0-4077-b12b-4f4a2b01ef38"
+}
