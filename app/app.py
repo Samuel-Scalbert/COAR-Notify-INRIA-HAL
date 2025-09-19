@@ -21,7 +21,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 app.config.update(flask_config)
 
-from app.routes import coar_inbox, db_updater, status, softwares, documents
+from app.routes import coar_inbox, db_updater, status, software, documents
 
 db = init_db(app)
 

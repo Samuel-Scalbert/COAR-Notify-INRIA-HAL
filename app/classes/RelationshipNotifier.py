@@ -1,6 +1,6 @@
 from coarnotify.client import COARNotifyClient
 from coarnotify.core.activitystreams2 import ActivityStreamsTypes
-from coarnotify.patterns import AnnounceRelationship
+from coarnotify.patterns import AnnounceReview
 from coarnotify.core.notify import NotifyActor, NotifyObject, NotifyService
 import json
 
@@ -10,28 +10,35 @@ class SoftwareInArticleNotifier:
                  target_service_id, target_inbox):
 
         # Create announcement
-        self.announcement = AnnounceRelationship()
+        self.announcement = AnnounceReview()
 
         # Actor
         actor = NotifyActor()
         actor.id = actor_id
         actor.name = actor_name
-        actor.type = ActivityStreamsTypes.ORGANIZATION
+        actor.type = ActivityStreamsTypes.SERVICE
         self.announcement.actor = actor
-
-        # Object (Relationship)
-        obj = NotifyObject()
-        obj.id = software_id
-        obj.type =  ActivityStreamsTypes.RELATIONSHIP
-        obj.subject =  article_id
-        obj.object = software_id
-        obj.relationship = relationship_uri
-        self.announcement.obj = obj
 
         # Context (Relationship)
         cont = NotifyObject()
         cont.id = context_id
         self.announcement.context = cont
+
+        # Object
+        obj = NotifyObject()
+        obj.cite_as =  "https://doi.org/10.5063/schema/codemeta-2.0"
+        obj.id = "oai:HAL:hal-03685380v1"
+        # citation sub-object
+        citation = {
+            "type": "SoftwareSourceCode",
+            "name": "PyPDEVS",
+            "codeRepository": "https://github.com/capocchi/PythonPDEVS",
+            "referencePublication": None
+        }
+        # assign with prefix in the key
+        obj.set_property("sorg:citation", citation)
+        self.announcement.actor = actor
+        print(obj.to_jsonld())
 
         # Origin
         origin = NotifyService()

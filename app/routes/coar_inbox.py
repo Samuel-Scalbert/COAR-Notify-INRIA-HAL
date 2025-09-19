@@ -19,7 +19,6 @@ def receive_notification():
 
         # Parse into a COAR Notify object
         notification = COARNotifyFactory.get_by_object(data)
-
         # Store the notification for display
         received_notifications.append(notification.to_jsonld())
 
