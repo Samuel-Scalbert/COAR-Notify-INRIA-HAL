@@ -2,6 +2,7 @@ import json
 import csv
 from pyArango.connection import Connection
 
+
 def check_or_create_collection(db, collection_name, collection_type='Collection'):
     """Return collection if exists, else create it."""
     if db.hasCollection(collection_name):
@@ -9,6 +10,7 @@ def check_or_create_collection(db, collection_name, collection_type='Collection'
     else:
         db.createCollection(collection_type, name=collection_name)
         return db[collection_name]
+
 
 def load_blacklist(csv_path):
     """Load blacklist terms from CSV (first column)."""
@@ -21,6 +23,7 @@ def load_blacklist(csv_path):
                 blacklist.append(row[0].strip())
     return set(blacklist)
 
+
 def remove_duplicates(lst):
     """Remove duplicate JSON objects by hashing."""
     seen = set()
@@ -31,6 +34,7 @@ def remove_duplicates(lst):
             seen.add(key)
             unique.append(item)
     return unique
+
 
 def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.csv"):
     """
@@ -82,9 +86,11 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
 
     return True
 
-            # Create e
+    # Create e
+
 
 db = None
+
 
 def init_db(app):
     global db

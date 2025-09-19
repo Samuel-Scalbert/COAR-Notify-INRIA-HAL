@@ -18,11 +18,7 @@ if __name__ == "__main__":
     print("Payload:")
     print(notifier.notification.to_jsonld())
 
-'''
-  "object": {
-    "as:object": "https://hal.science/{id_document}",
-    "as:relationship": "https://www.w3.org/ns/activitystreams#Application",
-    "as:subject": "https://vm_datalake_url/software/{id}",
-    "id": "https://vm_datalake_url/software/{id}",
-    "type": "Relationship"
-'''
+    # Try sending; don't crash if inbox is not available
+    resp = notifier.send(validate=False)
+    if resp is not None:
+        print(f"Sent. HTTP {resp.status_code}")

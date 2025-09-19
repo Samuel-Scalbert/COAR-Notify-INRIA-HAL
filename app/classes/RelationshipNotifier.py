@@ -19,6 +19,7 @@ class SoftwareMentionNotifier:
     # Attribute annotations for static analyzers
     notification: SoftwareMentionNotification
     target_inbox: str
+
     def __init__(
             self,
             document_id,
