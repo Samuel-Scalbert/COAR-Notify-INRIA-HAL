@@ -1,6 +1,6 @@
 import json
-
 import requests
+import uuid
 
 
 class SoftwareMentionNotification:
@@ -12,8 +12,8 @@ class SoftwareMentionNotification:
 
 
 class SoftwareMentionNotifier:
-    actor_id = "https://datalake.inria.fr"
-    actor_name = "Datalake Inria"
+    actor_id = "https://datalake.inria.SAMUEL.fr"
+    actor_name = "Samuel Scalbert"
     origin_inbox = "https://datalake.inria.fr/inbox"
 
     # Attribute annotations for static analyzers
@@ -21,65 +21,68 @@ class SoftwareMentionNotifier:
     target_inbox: str
 
     def __init__(
-            self,
-            document_id,
-            software_id,
-            mention_name,
-            mention_type,
-            mention_context,
-            mention_url,
-            target_id,
-            target_inbox
+        self,
+        document_id,
+        software_name,
+        software_repo,
+        mention_type,
+        mention_context,
+        target_id,
+        target_inbox,
     ):
         self.target_inbox = target_inbox
 
-        notification_id = f"{self.actor_id}/notifications/{document_id}-{software_id}"
+        # Generate a random UUID (version 4) and convert to URN
+        notification_id = uuid.uuid4().urn
 
         payload = {
             "@context": [
                 "https://www.w3.org/ns/activitystreams",
-                "https://w3id.org/notify#"
+                "https://purl.org/coar/notify",
             ],
             "id": notification_id,
-            "type": ["Announce", "coar-notify:ReviewAction"],
+            "type": ["Announce", "coar-notify:RelationshipAnnounce"],
             "actor": {
                 "id": self.actor_id,
                 "type": "Service",
-                "name": self.actor_name
+                "name": self.actor_name,
             },
             "origin": {
                 "id": self.actor_id,
                 "type": "Service",
-                "inbox": self.origin_inbox
+                "inbox": self.origin_inbox,
             },
             "target": {
                 "id": target_id,
                 "type": "Service",
-                "inbox": target_inbox
+                "inbox": target_inbox,
             },
             "object": {
+                "id": document_id,
+                "ietf:cite-as": None,
+                "sorg:citation": {
+                    "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+                    "type": "SoftwareSourceCode",
+                    "name": software_name,
+                    "codeRepository": software_repo,
+                    "referencePublication": None,
+                },
                 "mentionType": mention_type,
                 "mentionContext": mention_context,
-                "cite_as": document_id,
-                "sorg:citation":
-                    {
-                        "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
-                        "type": "SoftwareSourceCode",
-                        "name": mention_name,
-                        "codeRepository": mention_url
-                        # "referencePublication":
-                    },
-            },
-            "context": {
-                "id": document_id
             }
         }
 
         self.notification = SoftwareMentionNotification(payload)
 
-    def send(self, validate=True):
+    def send(self):
+        url = self.target_inbox
         headers = {"Content-Type": "application/ld+json"}
-        data = json.dumps(self.notification.to_jsonld())
-        resp = requests.post(self.target_inbox, data=data, headers=headers, timeout=10)
-        resp.raise_for_status()
+        payload = self.notification.to_jsonld()  # already a dict
+        print(type(payload))  # <class 'dict'>
+        resp = requests.post(url, headers=headers, json=payload)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError:
+            print("Status:", resp.status_code)
+            raise
         return resp
