@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: coar-notify-inria-hal:latest
+    image: lfoppiano/coar-notify-inria-hal:latest
     depends_on:
       arangodb:
         condition: service_healthy
