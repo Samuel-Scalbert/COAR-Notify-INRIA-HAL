@@ -18,7 +18,7 @@ services:
       retries: 10
 
   app:
-    build: .
+    image: coar-notify-inria-hal:latest
     depends_on:
       arangodb:
         condition: service_healthy
