@@ -1,6 +1,7 @@
 import json
 import csv
 from pyArango.connection import Connection
+from pyArango.theExceptions import CreationError
 
 
 def check_or_create_collection(db, collection_name, collection_type='Collection'):
@@ -100,7 +101,19 @@ def init_db(app):
         password=app.config["ARANGO_PASSWORD"]
     )
 
-    if not conn.hasDatabase(app.config["ARANGO_DB"]):
-        conn.createDatabase(name=app.config["ARANGO_DB"])
-    db = conn[app.config["ARANGO_DB"]]
+    db_name = app.config["ARANGO_DB"]
+    # Handle race conditions across multiple workers: create if missing, but ignore duplicate creation
+    try:
+        if not conn.hasDatabase(db_name):
+            try:
+                conn.createDatabase(name=db_name)
+            except CreationError:
+                # If another worker just created it, it will exist now. Re-check.
+                if not conn.hasDatabase(db_name):
+                    raise
+    except Exception:
+        # As an additional safeguard, if hasDatabase() itself fails momentarily, try to proceed if we can access the DB
+        pass
+
+    db = conn[db_name]
     return db
