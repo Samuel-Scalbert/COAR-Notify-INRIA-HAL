@@ -1,0 +1,30 @@
+# VCS
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.so
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Docker
+Dockerfile*
+!.dockerignore
+
+# Misc
+*.log
+*.sqlite3
+

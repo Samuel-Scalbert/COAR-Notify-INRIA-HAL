@@ -5,12 +5,15 @@ from pyArango.theExceptions import CreationError
 
 
 def check_or_create_collection(db, collection_name, collection_type='Collection'):
-    """Return collection if exists, else create it."""
+    """Return collection if exists, else create it safely under concurrency."""
     if db.hasCollection(collection_name):
         return db[collection_name]
-    else:
+    try:
         db.createCollection(collection_type, name=collection_name)
-        return db[collection_name]
+    except CreationError:
+        # Likely created concurrently by another worker; proceed to return it
+        pass
+    return db[collection_name]
 
 
 def load_blacklist(csv_path):
