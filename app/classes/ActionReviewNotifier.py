@@ -3,7 +3,7 @@ import requests
 import uuid
 
 
-class SoftwareMentionNotification:
+class ActionReviewSoftware:
     def __init__(self, payload: dict):
         self._payload = payload
 
@@ -11,13 +11,13 @@ class SoftwareMentionNotification:
         return self._payload
 
 
-class SoftwareMentionNotifier:
+class ActionReviewNotifier:
     actor_id = "https://datalake.inria.SAMUEL.fr"
     actor_name = "Samuel Scalbert"
     origin_inbox = "https://datalake.inria.fr/inbox"
 
     # Attribute annotations for static analyzers
-    notification: SoftwareMentionNotification
+    notification: ActionReviewSoftware
     target_inbox: str
 
     def __init__(
@@ -36,10 +36,7 @@ class SoftwareMentionNotifier:
         notification_id = uuid.uuid4().urn
 
         payload = {
-            "@context": [
-                "https://www.w3.org/ns/activitystreams",
-                "https://purl.org/coar/notify",
-            ],
+            "@context": ["Offer","coar-notify:ReviewAction"],
             "id": notification_id,
             "type": ["Announce", "coar-notify:RelationshipAnnounce"],
             "actor": {
@@ -72,13 +69,12 @@ class SoftwareMentionNotifier:
             }
         }
 
-        self.notification = SoftwareMentionNotification(payload)
+        self.notification = ActionReviewSoftware(payload)
 
     def send(self):
         url = self.target_inbox
         headers = {"Content-Type": "application/ld+json"}
         payload = self.notification.to_jsonld()  # already a dict
-        print(type(payload))  # <class 'dict'>
         resp = requests.post(url, headers=headers, json=payload)
         try:
             resp.raise_for_status()
