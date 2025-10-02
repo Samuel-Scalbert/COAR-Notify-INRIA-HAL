@@ -1,6 +1,5 @@
 import os
 import requests
-import json
 
 API_URL = "http://127.0.0.1:5500/insert"
 JSON_DIR = "./app/static/data/json_files"
