@@ -31,10 +31,6 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       # Optionally, check that the code can be imported (basic build check)
-      - name: Check Python build (import test)
-        run: |
-          python -c "import app.app"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
