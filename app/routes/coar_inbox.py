@@ -1,10 +1,7 @@
-import json
-
 from flask import request, jsonify, render_template
-from app.app import app
-from coarnotify.factory import COARNotifyFactory
-from app.utils.notification_handler import accept_notification, reject_notification
 
+from app.app import app
+from app.utils.notification_handler import accept_notification, reject_notification
 
 received_notifications = []
 
