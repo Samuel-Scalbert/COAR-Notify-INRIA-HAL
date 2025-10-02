@@ -1,4 +1,5 @@
 from app.classes.ActionReviewNotifier import ActionReviewNotifier
+from app.classes.RelationshipAnnounceNotifier import RelationshipAnnounceNotifier
 
 def notification_JSON_to_HAL(file):
     from app.app import db
@@ -32,7 +33,8 @@ def notification_JSON_to_HAL(file):
                                     """
     notification_list = db.AQLQuery(query, rawResults=True)
     for notification in notification_list:
-        notifier = ActionReviewNotifier(
+
+        notifier_hal = ActionReviewNotifier(
             filename,
             notification['softwareName'],
             None,
@@ -43,8 +45,17 @@ def notification_JSON_to_HAL(file):
             # "http://127.0.0.1:5500/",
             # "http://127.0.0.1:5500/inbox"
         )
+        #resp = notifier_hal.send()
 
-        # Always output the payload
+        notifier_sh = RelationshipAnnounceNotifier(
+            filename,
+            notification['softwareName'],
+            None,
+            #"https://inria.hal.science",
+            #"https://inbox-preprod.archives-ouvertes.fr/",
+            "http://127.0.0.1:5500/",
+            "http://127.0.0.1:5500/inbox"
+        )
 
-        # Try sending; don't crash if inbox is not available
-        resp = notifier.send()
+        resp = notifier_sh.send()
+
