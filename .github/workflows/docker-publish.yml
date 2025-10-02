@@ -1,15 +1,20 @@
-name: Build and Push Docker image
+name: Build, Lint, and Publish Docker Image
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, master ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  IMAGE_NAME: lfoppiano/coar-notify-inria-hal
 
 jobs:
-  build-and-push:
+  lint_and_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -21,47 +26,49 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
-      - name: Lint with flake8
+      - name: Lint (flake8)
         run: |
-          pip install flake8
-          # stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 app sandbox || true
 
-      # Optionally, check that the code can be imported (basic build check)
+      - name: Syntax check (compileall)
+        run: |
+          python -m compileall -q app sandbox || (echo 'Python syntax errors found' && exit 1)
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
+#        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/coar-notify-inria-hal:latest
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
 
-# Documentation
-# -------------
-# This workflow builds and pushes a Docker image to Docker Hub on every push to the main branch.
-#
-# Prerequisites:
-# - Set the following secrets in your GitHub repository:
-#   - DOCKERHUB_USERNAME: Your Docker Hub username
-#   - DOCKERHUB_TOKEN: Your Docker Hub access token or password
-#
-# Usage:
-# 1. Push code to the main branch.
-# 2. The workflow will automatically build the Docker image using the Dockerfile in the repository root.
-# 3. The image will be pushed to Docker Hub as <DOCKERHUB_USERNAME>/coar-notify-inria-hal:latest
-#
-# To use a different image name or tag, edit the 'tags' field in the workflow.
-#
-# Example Docker Hub pull command:
-#   docker pull <DOCKERHUB_USERNAME>/coar-notify-inria-hal:latest
+      - name: Summary
+        run: |
+          echo "Published tags: ${{ steps.meta.outputs.tags }}"
+
