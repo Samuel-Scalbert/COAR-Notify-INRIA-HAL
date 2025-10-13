@@ -13,7 +13,7 @@ def accept_notification(notification):
             FILTER edge_soft._from == doc._id 
             LET software = DOCUMENT(edge_soft._to)
             FILTER software.software_name.normalizedForm == "{software_name}"
-            UPDATE software WITH {{ verification_by_author: True }} IN softwares
+            UPDATE software WITH {{ verification_by_author: True }} IN software
         """
     print(query)
     result = db.AQLQuery(query, rawResults=True)
@@ -31,7 +31,7 @@ def reject_notification(notification):
             FILTER edge_soft._from == doc._id 
             LET software = DOCUMENT(edge_soft._to)
             FILTER software.software_name.normalizedForm == "{software_name}"
-            UPDATE software WITH {{ verification_by_author: False }} IN softwares
+            UPDATE software WITH {{ verification_by_author: False }} IN software
         """
     print(query)
     result = db.AQLQuery(query, rawResults=True)

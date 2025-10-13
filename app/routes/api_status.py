@@ -15,7 +15,7 @@ def can_upload():
     """
     try:
         # Check if main collections exist
-        collections = ["documents", "softwares", "edge_doc_to_software"]
+        collections = ["documents", "software", "edge_doc_to_software"]
         existing = {c: db.hasCollection(c) for c in collections}
 
         return jsonify({
