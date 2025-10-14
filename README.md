@@ -257,8 +257,6 @@ The system automatically detects data providers from filenames and document IDs.
 Supported providers:
 - **HAL**: `hal-`, `oai:hal:`, `.hal.` patterns
 - **Software Heritage**: `swh-`, `softwareheritage`, `.swh.` patterns
-- **Zenodo**: `zenodo-`, `.zenodo.` patterns
-- **GitHub**: `github-`, `.github.` patterns
 
 Example:
 ```sh
