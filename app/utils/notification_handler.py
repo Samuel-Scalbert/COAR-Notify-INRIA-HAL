@@ -190,9 +190,8 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
     elif provider == ProviderType.SOFTWARE_HERITAGE:
         config.update({
             'base_url': os.getenv('SWH_BASE_URL', 'https://archive.softwareheritage.org'),
-            'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.softwareheritage.org'),
+            'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.staging.swh.network/'),
         })
-
 
     return config
 
@@ -228,6 +227,9 @@ def send_notifications_to_sh(document_id: str) -> int:
         for notification in notifications:
             notifier = RelationshipAnnounceNotifier(
                 document_id,
+                "https://datalake.inria.fr",
+                "Inria DataLake",
+                "https://prod-datadcis.inria.fr/coar/inbox",
                 notification['softwareName'],
                 None,
                 config['base_url'],

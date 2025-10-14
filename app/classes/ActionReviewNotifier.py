@@ -11,9 +11,6 @@ class ActionReviewSoftware:
 
 
 class ActionReviewNotifier:
-    actor_id = "https://datalake.inria.SAMUEL.fr"
-    actor_name = "Samuel Scalbert"
-    origin_inbox = "https://datalake.inria.fr/inbox"
 
     # Attribute annotations for static analyzers
     notification: ActionReviewSoftware
@@ -22,6 +19,9 @@ class ActionReviewNotifier:
     def __init__(
         self,
         document_id,
+        actor_id,
+        actor_name,
+        origin_inbox,
         software_name,
         software_repo,
         mention_type,
@@ -42,14 +42,14 @@ class ActionReviewNotifier:
             "id": notification_id,
             "type": ['Offer', 'coar-notify:ReviewAction'],
             "actor": {
-                "id": self.actor_id,
+                "id": actor_id,
                 "type": "Service",
-                "name": self.actor_name,
+                "name": actor_name,
             },
             "origin": {
-                "id": self.actor_id,
+                "id": actor_id,
                 "type": "Service",
-                "inbox": self.origin_inbox,
+                "inbox": origin_inbox,
             },
             "target": {
                 "id": target_id,

@@ -91,18 +91,51 @@ def insert_new_document():
         return jsonify({"error": f"Insertion failed: {str(e)}"}), 500
 
     if inserted:
+        notification_results = {}
         try:
-            # Create a new file-like object with the document_id for notifications
-            from werkzeug.datastructures import FileStorage
-            import io
-
-            send_notifications_to_hal(document_id)
-            send_notifications_to_sh(document_id)
+            # Send notifications to HAL and collect results
+            hal_notifications = send_notifications_to_hal(document_id)
+            notification_results["hal"] = {
+                "sent": hal_notifications,
+                "failed": max(0, 1 - hal_notifications)  # Assuming 1 total attempt
+            }
         except Exception as e:
-            logger.error(f"Notification failed: {e}")
+            logger.error(f"HAL notification failed for {document_id}: {e}")
+            notification_results["hal"] = {
+                "sent": 0,
+                "failed": 1,
+                "error": str(e)
+            }
+
+        try:
+            # Send notifications to Software Heritage and collect results
+            swh_notifications = send_notifications_to_sh(document_id)
+            notification_results["swh"] = {
+                "sent": swh_notifications,
+                "failed": max(0, 1 - swh_notifications)  # Assuming 1 total attempt
+            }
+        except Exception as e:
+            logger.error(f"SWH notification failed for {document_id}: {e}")
+            notification_results["swh"] = {
+                "sent": 0,
+                "failed": 1,
+                "error": str(e)
+            }
+
+        # Calculate totals
+        total_sent = sum(result.get("sent", 0) for result in notification_results.values())
+        total_failed = sum(result.get("failed", 0) for result in notification_results.values())
 
         return jsonify({
             "status": "inserted",
             "file": original_filename,
-            "document_id": document_id
+            "document_id": document_id,
+            "notifications": {
+                "summary": {
+                    "total_sent": total_sent,
+                    "total_failed": total_failed,
+                    "total_attempts": total_sent + total_failed
+                },
+                "by_provider": notification_results
+            }
         }), 201
