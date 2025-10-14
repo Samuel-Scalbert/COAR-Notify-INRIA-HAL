@@ -83,12 +83,8 @@ def insert_new_document():
         db_manager = get_db()
         # Override the filename with the provided document_id for HAL identification
         original_filename = file.filename
-        file.filename = document_id
-
         inserted = db_manager.insert_document_as_json(document_id, file)  # returns True if inserted, False if duplicate
 
-        # Restore original filename for logging and notifications
-        file.filename = original_filename
 
     except Exception as e:
         logger.error(f"File insertion failed: {e}")
@@ -100,47 +96,13 @@ def insert_new_document():
             from werkzeug.datastructures import FileStorage
             import io
 
-            # Read the file content
-            file_content = file.read()
-            file.seek(0)  # Reset file pointer
-
-            # Create a new FileStorage object with document_id as filename for notifications
-            notification_file = FileStorage(
-                stream=io.BytesIO(file_content),
-                filename=document_id,
-                content_type=file.content_type,
-                content_length=file.content_length
-            )
-
-            send_notifications_to_hal(notification_file)
+            send_notifications_to_hal(document_id)
+            send_notifications_to_sh(document_id)
         except Exception as e:
             logger.error(f"Notification failed: {e}")
+
         return jsonify({
             "status": "inserted",
             "file": original_filename,
             "document_id": document_id
         }), 201
-    else:
-        # Still send notifications even if file already exists
-        try:
-            from werkzeug.datastructures import FileStorage
-            import io
-
-            file_content = file.read()
-            file.seek(0)
-
-            notification_file = FileStorage(
-                stream=io.BytesIO(file_content),
-                filename=document_id,
-                content_type=file.content_type,
-                content_length=file.content_length
-            )
-
-            send_notifications_to_sh(notification_file)
-        except Exception as e:
-            logger.error(f"Notification failed: {e}")
-        return jsonify({
-            "status": "already_exists",
-            "file": original_filename,
-            "document_id": document_id
-        }), 409

@@ -1,8 +1,7 @@
 import logging
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from enum import Enum
-from werkzeug.datastructures import FileStorage
 from app.classes.ActionReviewNotifier import ActionReviewNotifier
 from app.classes.RelationshipAnnounceNotifier import RelationshipAnnounceNotifier
 
@@ -13,8 +12,6 @@ class ProviderType(Enum):
     """Enumeration of supported data providers."""
     HAL = "hal"
     SOFTWARE_HERITAGE = "software_heritage"
-    ZENODO = "zenodo"
-    GITHUB = "github"
     UNKNOWN = "unknown"
 
 
@@ -24,33 +21,6 @@ class NotificationType(Enum):
     RELATIONSHIP_ANNOUNCE = "relationship_announce"
     OFFER_ANNOUNCE = "offer_announce"
     UNDEFINED = "undefined"
-
-
-def detect_provider_from_filename(filename: str) -> ProviderType:
-    """
-    Detect the provider type from filename patterns.
-
-    Args:
-        filename: The filename to analyze
-
-    Returns:
-        ProviderType: The detected provider type
-    """
-    if not filename:
-        return ProviderType.UNKNOWN
-
-    filename_lower = filename.lower()
-
-    if any(pattern in filename_lower for pattern in ['hal-', 'oai:hal:', '.hal.']):
-        return ProviderType.HAL
-    elif any(pattern in filename_lower for pattern in ['swh-', 'softwareheritage', '.swh.']):
-        return ProviderType.SOFTWARE_HERITAGE
-    elif any(pattern in filename_lower for pattern in ['zenodo-', '.zenodo.']):
-        return ProviderType.ZENODO
-    elif any(pattern in filename_lower for pattern in ['github-', '.github.']):
-        return ProviderType.GITHUB
-    else:
-        return ProviderType.UNKNOWN
 
 
 def detect_provider_from_document_data(doc_id: str) -> ProviderType:
@@ -72,10 +42,6 @@ def detect_provider_from_document_data(doc_id: str) -> ProviderType:
         return ProviderType.HAL
     elif doc_id_lower.startswith('swh:'):
         return ProviderType.SOFTWARE_HERITAGE
-    elif 'zenodo' in doc_id_lower:
-        return ProviderType.ZENODO
-    elif 'github' in doc_id_lower:
-        return ProviderType.GITHUB
     else:
         return ProviderType.UNKNOWN
 
@@ -96,12 +62,6 @@ def get_notification_type_for_provider(provider: ProviderType, document_context:
         return NotificationType.ACTION_REVIEW
     elif provider == ProviderType.SOFTWARE_HERITAGE:
         # Software Heritage often uses RelationshipAnnounce for linking
-        return NotificationType.RELATIONSHIP_ANNOUNCE
-    elif provider == ProviderType.ZENODO:
-        # Zenodo may use ActionReview for citation/review
-        return NotificationType.ACTION_REVIEW
-    elif provider == ProviderType.GITHUB:
-        # GitHub often uses RelationshipAnnounce for repository linking
         return NotificationType.RELATIONSHIP_ANNOUNCE
     else:
         # Default to ActionReview for unknown providers
@@ -190,7 +150,7 @@ def reject_notification(notification: Dict[str, Any]) -> bool:
 
 
 
-def get_software_notifications(hal_filename: str) -> list[Dict[str, Any]]:
+def get_software_notifications(document_id: str) -> list[Dict[str, Any]]:
     """
     Retrieve software notifications for a given HAL document.
 
@@ -203,10 +163,10 @@ def get_software_notifications(hal_filename: str) -> list[Dict[str, Any]]:
     try:
         from app.utils.db import get_db
         db_manager = get_db()
-        return db_manager.get_software_notifications(hal_filename)
+        return db_manager.get_software_notifications(document_id)
 
     except Exception as e:
-        logger.error(f"Failed to retrieve software notifications for {hal_filename}: {e}")
+        logger.error(f"Failed to retrieve software notifications for {document_id}: {e}")
         return []
 
 
@@ -232,97 +192,12 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
             'base_url': os.getenv('SWH_BASE_URL', 'https://archive.softwareheritage.org'),
             'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.softwareheritage.org'),
         })
-    elif provider == ProviderType.ZENODO:
-        config.update({
-            'base_url': os.getenv('ZENODO_BASE_URL', 'https://zenodo.org'),
-            'inbox_url': os.getenv('ZENODO_INBOX_URL', 'https://inbox.zenodo.org'),
-        })
-    elif provider == ProviderType.GITHUB:
-        config.update({
-            'base_url': os.getenv('GITHUB_BASE_URL', 'https://github.com'),
-            'inbox_url': os.getenv('GITHUB_INBOX_URL', 'https://inbox.github.com'),
-        })
-    else:
-        # Default configuration
-        config.update({
-            'base_url': os.getenv('DEFAULT_BASE_URL', 'http://127.0.0.1:5500/'),
-            'inbox_url': os.getenv('DEFAULT_INBOX_URL', 'http://127.0.0.1:5500/inbox'),
-        })
 
-    # Add development URLs
-    config.update({
-        'dev_base_url': os.getenv('DEV_BASE_URL', 'http://127.0.0.1:5500/'),
-        'dev_inbox_url': os.getenv('DEV_INBOX_URL', 'http://127.0.0.1:5500/inbox')
-    })
 
     return config
 
 
-def get_notifier_class_for_notification_type(notification_type: NotificationType):
-    """
-    Get the appropriate notifier class for a notification type.
-
-    Args:
-        notification_type: The type of notification
-
-    Returns:
-        The notifier class to use
-    """
-    if notification_type == NotificationType.ACTION_REVIEW:
-        return ActionReviewNotifier
-    elif notification_type == NotificationType.RELATIONSHIP_ANNOUNCE:
-        return RelationshipAnnounceNotifier
-    else:
-        # Default to ActionReview
-        return ActionReviewNotifier
-
-
-def send_notification(notifier_class, document_id: str, notification_data: Dict[str, Any],
-                     config: Dict[str, str], provider: ProviderType) -> bool:
-    """
-    Send a notification using the specified notifier class.
-
-    Args:
-        notifier_class: The notifier class to instantiate
-        document_id: Document identifier (provider-specific format)
-        notification_data: Notification payload data
-        config: Configuration dictionary with URLs
-        provider: The provider type for context
-
-    Returns:
-        bool: True if notification was sent successfully
-    """
-    try:
-        if notifier_class == ActionReviewNotifier:
-            notifier = notifier_class(
-                document_id,
-                notification_data['softwareName'],
-                None,
-                notification_data['maxDocumentAttribute'],
-                notification_data['contexts'],
-                config['base_url'],
-                config['inbox_url']
-            )
-        else:  # RelationshipAnnounceNotifier
-            notifier = notifier_class(
-                document_id,
-                notification_data['softwareName'],
-                None,
-                config['dev_base_url'],
-                config['dev_inbox_url']
-            )
-
-        response = notifier.send()
-        logger.info(f"Sent {notifier_class.__name__} notification for {provider.value}:{document_id} "
-                   f"-> {notification_data['softwareName']}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to send {notifier_class.__name__} notification for {provider.value}: {e}")
-        return False
-
-
-def send_notifications_to_sh(file: FileStorage) -> int:
+def send_notifications_to_sh(document_id: str) -> int:
     """
     Send COAR notifications specifically to Software Heritage for software mentions.
 
@@ -333,15 +208,8 @@ def send_notifications_to_sh(file: FileStorage) -> int:
         int: Number of notifications successfully sent
     """
     try:
-        # Extract document identifier from file
-        if not file.filename:
-            logger.error("Invalid filename provided")
-            return 0
-
-        # Clean filename to get document ID (SWH-specific format)
-        document_id = file.filename.replace('.software.json', '').replace('.json', '')
         if not document_id:
-            logger.error("Could not extract document ID from filename")
+            logger.error("Invalid document ID provided")
             return 0
 
         logger.info(f"Processing Software Heritage notifications for document: {document_id}")
@@ -352,31 +220,31 @@ def send_notifications_to_sh(file: FileStorage) -> int:
             logger.warning(f"No software notifications found for {document_id}")
             return 0
 
-        # Software Heritage typically uses RelationshipAnnounce notifications
-        notification_type = NotificationType.RELATIONSHIP_ANNOUNCE
-        notifier_class = get_notifier_class_for_notification_type(notification_type)
-
         # Get Software Heritage specific configuration
         config = get_notification_config_for_provider(ProviderType.SOFTWARE_HERITAGE)
 
         # Send notifications
         success_count = 0
         for notification in notifications:
-            # Send to Software Heritage production inbox
-            if send_notification(notifier_class, document_id, notification, config, ProviderType.SOFTWARE_HERITAGE):
+            notifier = RelationshipAnnounceNotifier(
+                document_id,
+                notification['softwareName'],
+                None,
+                config['base_url'],
+                config['inbox_url']
+            )
+            response = notifier.send()
+            if response:
                 success_count += 1
-
-            # Send to development environment (for testing)
-            send_notification(RelationshipAnnounceNotifier, document_id, notification, config, ProviderType.SOFTWARE_HERITAGE)
 
         logger.info(f"Successfully sent {success_count} Software Heritage notifications for {document_id}")
         return success_count
 
     except Exception as e:
-        logger.error(f"Failed to process Software Heritage notifications for file {file.filename}: {e}")
+        logger.error(f"Failed to process Software Heritage notifications for {document_id}: {e}")
         return 0
 
-def send_notifications_to_hal(file: FileStorage) -> int:
+def send_notifications_to_hal(document_id: str) -> int:
     """
     Send COAR notifications to appropriate providers for software mentions in a document.
 
@@ -387,20 +255,11 @@ def send_notifications_to_hal(file: FileStorage) -> int:
         int: Number of notifications successfully sent
     """
     try:
-        # Extract document identifier from file
-        if not file.filename:
-            logger.error("Invalid filename provided")
-            return 0
-
-        # Clean filename to get document ID
-        document_id = file.filename.replace('.software.json', '').replace('.json', '')
         if not document_id:
-            logger.error("Could not extract document ID from filename")
+            logger.error("Invalid document ID provided")
             return 0
 
-        # Detect provider from filename
-        provider = detect_provider_from_filename(file.filename)
-        logger.info(f"Processing notifications for {provider.value} document: {document_id}")
+        logger.info(f"Processing notifications for HAL for document: {document_id}")
 
         # Get notification data using the document ID (works for any provider)
         notifications = get_software_notifications(document_id)
@@ -408,28 +267,30 @@ def send_notifications_to_hal(file: FileStorage) -> int:
             logger.warning(f"No software notifications found for {document_id}")
             return 0
 
-        # Determine appropriate notification type for this provider
-        notification_type = get_notification_type_for_provider(provider)
-        notifier_class = get_notifier_class_for_notification_type(notification_type)
-
         # Get provider-specific configuration
-        config = get_notification_config_for_provider(provider)
+        config = get_notification_config_for_provider(ProviderType.HAL)
 
         # Send notifications
         success_count = 0
         for notification in notifications:
-            # Send to provider's production inbox
-            if send_notification(notifier_class, document_id, notification, config, provider):
+            notifier = ActionReviewNotifier(
+                document_id,
+                notification['softwareName'],
+                None,
+                notification['maxDocumentAttribute'],
+                notification['contexts'],
+                config['base_url'],
+                config['inbox_url']
+            )
+            response = notifier.send()
+            if response:
                 success_count += 1
 
-            # Send to development environment (for testing)
-            send_notification(RelationshipAnnounceNotifier, document_id, notification, config, provider)
-
-        logger.info(f"Successfully sent {success_count} notifications for {provider.value}:{document_id}")
+        logger.info(f"Successfully sent {success_count} notifications for {ProviderType.HAL.value}:{document_id}")
         return success_count
 
     except Exception as e:
-        logger.error(f"Failed to process notifications for file {file.filename}: {e}")
+        logger.error(f"Failed to process notifications for document_id {document_id}: {e}")
         return 0
 
 

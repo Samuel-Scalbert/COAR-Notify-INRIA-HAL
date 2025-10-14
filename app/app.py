@@ -1,6 +1,5 @@
 import json
 import os
-import logging
 from flask import Flask, render_template, jsonify
 from app.utils.db import init_db, get_db
 from dotenv import load_dotenv

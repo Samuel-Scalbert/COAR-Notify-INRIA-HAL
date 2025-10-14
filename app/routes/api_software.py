@@ -2,7 +2,6 @@ import logging
 from app.app import app
 from flask import request, jsonify
 from app.utils.db import get_db
-from app.utils.notification_handler import ProviderType, detect_provider_from_filename
 from app.utils.blacklist_manager import blacklist_manager
 from app.auth import require_api_key
 
@@ -22,17 +21,17 @@ def software_status():
         logger.error(f"Failed to get software status: {e}")
         return jsonify({"error": "Failed to retrieve software status"}), 500
 
-@app.route('/api/software/<id_software>', methods=['GET'])
-def software_from_id(id_software):
+@app.route('/api/software/name/<name>', methods=['GET'])
+def software_from_id(name):
     try:
         db_manager = get_db()
-        result = db_manager.get_software_by_normalized_name(id_software)
+        result = db_manager.get_software_by_normalized_name(name)
         return jsonify(result)
     except Exception as e:
-        logger.error(f"Failed to get software by ID {id_software}: {e}")
+        logger.error(f"Failed to get software by {name}: {e}")
         return jsonify({"error": "Failed to retrieve software"}), 500
 
-@app.route('/api/software_mention/<id_mention>', methods=['GET'])
+@app.route('/api/software/<id_mention>', methods=['GET'])
 def software_mention_from_id(id_mention):
     try:
         db_manager = get_db()
@@ -44,61 +43,6 @@ def software_mention_from_id(id_mention):
     except Exception as e:
         logger.error(f"Failed to get software mention {id_mention}: {e}")
         return jsonify({"error": "Failed to retrieve software mention"}), 500
-
-
-@app.route('/api/software/provider/<filename>', methods=['GET'])
-def detect_provider(filename):
-    """
-    Detect the provider type from a filename.
-
-    Args:
-        filename: The filename to analyze
-
-    Returns:
-        JSON with provider information
-    """
-    try:
-        provider = detect_provider_from_filename(filename)
-        return jsonify({
-            "filename": filename,
-            "provider": provider.value,
-            "provider_display": provider.value.replace('_', ' ').title()
-        })
-    except Exception as e:
-        logger.error(f"Failed to detect provider for {filename}: {e}")
-        return jsonify({"error": "Failed to detect provider"}), 500
-
-
-@app.route('/api/software/providers', methods=['GET'])
-def list_supported_providers():
-    """
-    List all supported providers and their capabilities.
-
-    Returns:
-        JSON with provider information
-    """
-    try:
-        providers = []
-        for provider in ProviderType:
-            if provider != ProviderType.UNKNOWN:
-                providers.append({
-                    "name": provider.value,
-                    "display_name": provider.value.replace('_', ' ').title(),
-                    "patterns": {
-                        ProviderType.HAL: ["hal-", "oai:hal:", ".hal."],
-                        ProviderType.SOFTWARE_HERITAGE: ["swh-", "softwareheritage", ".swh."],
-                        ProviderType.ZENODO: ["zenodo-", ".zenodo."],
-                        ProviderType.GITHUB: ["github-", ".github."]
-                    }.get(provider, [])
-                })
-
-        return jsonify({
-            "supported_providers": providers,
-            "total_count": len(providers)
-        })
-    except Exception as e:
-        logger.error(f"Failed to list providers: {e}")
-        return jsonify({"error": "Failed to list providers"}), 500
 
 
 # Blacklist management endpoints

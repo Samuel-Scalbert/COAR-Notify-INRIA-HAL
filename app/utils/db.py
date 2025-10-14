@@ -343,7 +343,7 @@ class DatabaseManager:
             logger.error(f"Failed to insert JSON file: {e}")
             return False
 
-    def get_software_notifications(self, hal_filename: str) -> List[Dict[str, Any]]:
+    def get_software_notifications(self, document_id: str) -> List[Dict[str, Any]]:
         """
         Get software notifications for a HAL document.
 
@@ -356,7 +356,7 @@ class DatabaseManager:
         try:
             query = """
                 FOR doc IN documents
-                    FILTER doc.file_hal_id == @hal_filename
+                    FILTER doc.file_hal_id == @document_id
                     FOR edge IN edge_doc_to_software
                         FILTER edge._from == doc._id
                         LET mention = DOCUMENT(edge._to)
@@ -380,11 +380,11 @@ class DatabaseManager:
                         }
             """
 
-            result = self.execute_aql_query(query, bind_vars={'hal_filename': hal_filename}, rawResults=True)
+            result = self.execute_aql_query(query, bind_vars={'document_id': document_id}, raw_results=True)
             return list(result)
 
         except Exception as e:
-            logger.error(f"Failed to get software notifications for {hal_filename}: {e}")
+            logger.error(f"Failed to get software notifications for {document_id}: {e}")
             return []
 
     def update_software_verification(self, hal_id: str, software_name: str, verification_status: bool) -> bool:
@@ -471,7 +471,7 @@ class DatabaseManager:
             logger.debug(f"Document not found: {collection_name}/{key}")
         return None
 
-    def get_software_by_normalized_name(self, id_software: str) -> List[Dict[str, Any]]:
+    def get_software_by_normalized_name(self, name: str) -> List[Dict[str, Any]]:
         """
         Get software documents by normalized name.
 
@@ -483,17 +483,16 @@ class DatabaseManager:
         """
         try:
             query = """
-                let soft_name = document("software/@id_software")
-                FOR soft in software
-                    filter soft.software_name.normalizedForm == soft_name.software_name.normalizedForm
-                    return soft
+                FOR soft IN software
+                    FILTER soft.software_name.normalizedForm == @name
+                    RETURN soft
             """
 
-            result = self.execute_aql_query(query, bind_vars={'id_software': id_software}, rawResults=True)
+            result = self.execute_aql_query(query, bind_vars={'name': name}, raw_results=True)
             return list(result)
 
         except Exception as e:
-            logger.error(f"Failed to get software by normalized name {id_software}: {e}")
+            logger.error(f"Failed to get software by normalized name {name}: {e}")
             return []
 
     def get_document_software(self, id_document: str, id_software: Optional[str] = None) -> List[Dict[str, Any]]:
