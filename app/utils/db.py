@@ -5,9 +5,8 @@ from typing import Dict, Any, List, Optional, Union
 from pyArango.connection import Connection
 from pyArango.theExceptions import CreationError
 from pyArango.database import Database
-from pyArango.collection import Collection, EdgeCollection
+from pyArango.collection import Collection
 from werkzeug.datastructures import FileStorage
-from app.utils.blacklist_manager import blacklist_manager
 
 logger = logging.getLogger(__name__)
 
