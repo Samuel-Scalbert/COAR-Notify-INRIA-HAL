@@ -95,12 +95,20 @@ curl -s -H "x-api-key: $API_KEY" http://localhost:5000/status | jq
   - Returns all software docs with the same normalized name as the given software `_key`.
 - GET `/api/software_mention/<id_mention>`
   - Returns a single software mention document by `_key`.
+- POST `/api/software`
+  - Headers: `x-api-key`
+  - Content-Type: `multipart/form-data` with a field `file` containing the JSON to insert.
+  - Returns 201 on new insert, 409 if already exists. Triggers notification send attempt.
 
 Examples:
 ```sh
 curl -s http://localhost:5000/api/software/status | jq
 curl -s http://localhost:5000/api/software/soft123 | jq
 curl -s http://localhost:5000/api/software_mention/mention456 | jq
+curl -s -X POST \
+  -H "x-api-key: $API_KEY" \
+  -F file=@/path/to/your.json \
+  http://localhost:5000/api/software | jq
 ```
 
 ### Document endpoints
@@ -119,20 +127,6 @@ curl -s http://localhost:5000/api/documents/status | jq
 curl -s http://localhost:5000/api/documents/docABC | jq
 curl -s http://localhost:5000/api/documents/docABC/software | jq
 curl -s http://localhost:5000/api/documents/docABC/software/soft123 | jq
-```
-
-### Ingestion (with auth)
-- POST `/insert`
-  - Headers: `x-api-key`
-  - Content-Type: `multipart/form-data` with a field `file` containing the JSON to insert.
-  - Returns 201 on new insert, 409 if already exists. Triggers notification send attempt.
-
-Example:
-```sh
-curl -s -X POST \
-  -H "x-api-key: $API_KEY" \
-  -F file=@/path/to/your.json \
-  http://localhost:5000/insert | jq
 ```
 
 ### COAR Notify inbox
