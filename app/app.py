@@ -22,6 +22,9 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 app.config.update(flask_config)
 
+# Import routes after app creation to avoid circular imports
+from app.routes import api_software, api_documents, coar_inbox, api_status
+
 db_manager = init_db(app)
 
 # Print ArangoDB connection information on startup
