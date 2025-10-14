@@ -1,7 +1,9 @@
 from app.app import app
 from flask import jsonify
+from app.auth import require_api_admin_key
 
 @app.route('/api/softwares/status', methods=['GET'])
+@require_api_admin_key
 def software_status():
     from app.app import db  # lazy import to avoid circular import
     software_col = db["softwares"]
@@ -13,6 +15,7 @@ def software_status():
     return jsonify(status_info)
 
 @app.route('/api/softwares/<id_software>', methods=['GET'])
+@require_api_admin_key
 def software_from_id(id_software):
     from app.app import db
     query = f"""
@@ -26,6 +29,7 @@ def software_from_id(id_software):
     return jsonify(result[0:])
 
 @app.route('/api/softwares_mention/<id_mention>', methods=['GET'])
+@require_api_admin_key
 def software_mention_from_id(id_mention):
     from app.app import db
     software_col = db["softwares"]
