@@ -7,6 +7,7 @@ from pyArango.theExceptions import CreationError
 from pyArango.database import Database
 from pyArango.collection import Collection, EdgeCollection
 from werkzeug.datastructures import FileStorage
+from app.utils.blacklist_manager import blacklist_manager
 
 logger = logging.getLogger(__name__)
 
@@ -275,12 +276,13 @@ class DatabaseManager:
             logger.error(f"Failed to check document existence: {e}")
             return False
 
-    def insert_json_file(self, file_json: Union[FileStorage, Dict[str, Any]],
-                        blacklist_csv: str = "./app/static/data/blacklist.csv") -> bool:
+    def insert_document_as_json(self, document_id: str, file_json: Union[FileStorage, Dict[str, Any]],
+                                blacklist_csv: str = "./app/static/data/blacklist.csv") -> bool:
         """
         Insert a JSON file into ArangoDB with document, software, and edge collections.
 
         Args:
+            document_id: Unique identifier for the document
             file_json: File object or dictionary containing the data
             blacklist_csv: Path to blacklist CSV file
 
@@ -299,20 +301,18 @@ class DatabaseManager:
             # Process input
             if hasattr(file_json, "read"):
                 data_json = json.load(file_json)
-                file_name = getattr(file_json, "filename", "unnamed").replace(".json", "").replace(".software", "")
             else:
                 data_json = file_json
-                file_name = data_json.get("file_hal_id", "unnamed")
 
             # Check if document already exists
-            if self.document_exists("documents", "file_hal_id", file_name):
-                logger.info(f"File '{file_name}' already exists in DB. Skipping.")
+            if self.document_exists("documents", "file_hal_id", document_id):
+                logger.info(f"Document with ID '{document_id}' already exists in DB. Skipping.")
                 return False
 
             # Insert main document
-            document_document = documents_collection.createDocument({"file_hal_id": file_name})
+            document_document = documents_collection.createDocument({"file_hal_id": document_id})
             document_document.save()
-            logger.debug(f"Created document: {file_name}")
+            logger.debug(f"Created document with ID: {document_id}")
 
             # Process mentions
             mentions = self.remove_duplicates(data_json.get("mentions", []))
@@ -337,7 +337,7 @@ class DatabaseManager:
 
                     inserted_count += 1
 
-            logger.info(f"Inserted {inserted_count} software mentions for document: {file_name}")
+            logger.info(f"Inserted {inserted_count} software mentions for document with ID: {document_id}")
             return True
 
         except Exception as e:
@@ -603,7 +603,7 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
     """
     global db_manager
     if db_manager:
-        return db_manager.insert_json_file(file_json, blacklist_csv)
+        return db_manager.insert_document_as_json(file_json, blacklist_csv)
     else:
         logger.error("Database manager not initialized")
         return False
