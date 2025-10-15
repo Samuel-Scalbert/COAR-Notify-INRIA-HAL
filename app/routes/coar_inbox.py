@@ -122,13 +122,12 @@ def inbox_description():
                     "status": "ok",
                     "type": "Accept",
                     "actor": "https://orcid.org/0000-0000-0000-0000"
-                }
+                },
+                "note": "The response contains the notification type and actor ID from the processed notification"
             },
             "400": {
-                "description": "Invalid notification format",
-                "example": {
-                    "error": "Invalid notification format"
-                }
+                "description": "Invalid request - no JSON data provided or malformed request",
+                "note": "Occurs when the request doesn't contain valid JSON data"
             }
         },
         "view_notifications": {
