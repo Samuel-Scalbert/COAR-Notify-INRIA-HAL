@@ -186,11 +186,13 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
         config.update({
             'base_url': os.getenv('HAL_BASE_URL', 'https://inria.hal.science'),
             'inbox_url': os.getenv('HAL_INBOX_URL', 'https://inbox-preprod.archives-ouvertes.fr/'),
+            'token': os.getenv('HAL_TOKEN'),
         })
     elif provider == ProviderType.SOFTWARE_HERITAGE:
         config.update({
             'base_url': os.getenv('SWH_BASE_URL', 'https://archive.softwareheritage.org'),
             'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.staging.swh.network/'),
+            'token': os.getenv('SWH_TOKEN'),
         })
 
     return config
@@ -232,8 +234,9 @@ def send_notifications_to_sh(document_id: str) -> int:
                 "https://prod-datadcis.inria.fr/coar/inbox",
                 notification['softwareName'],
                 None,
-                config['base_url'],
-                config['inbox_url']
+                target_id=config['base_url'],
+                target_inbox=config['inbox_url'],
+                token=config['token']
             )
             response = notifier.send()
             if response:
@@ -277,12 +280,15 @@ def send_notifications_to_hal(document_id: str) -> int:
         for notification in notifications:
             notifier = ActionReviewNotifier(
                 document_id,
-                notification['softwareName'],
-                None,
-                notification['maxDocumentAttribute'],
-                notification['contexts'],
-                config['base_url'],
-                config['inbox_url']
+                actor_id="https://datalake.inria.fr",
+                actor_name="Inria DataLake",
+                origin_inbox="https://prod-datadcis.inria.fr/coar/inbox",
+                software_name=notification['softwareName'],
+                software_repo=None,
+                mention_type=None,
+                target_id=config['base_url'],  # target_id
+                target_inbox=config['inbox_url'],  # target_inbox
+                token=config['token']
             )
             response = notifier.send()
             if response:

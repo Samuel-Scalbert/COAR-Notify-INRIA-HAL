@@ -25,8 +25,10 @@ class RelationshipAnnounceNotifier:
         software_repo,
         target_id,
         target_inbox,
+        token=None,
     ):
         self.target_inbox = target_inbox
+        self.token = token
 
         # Generate a random UUID (version 4) and convert to URN
         notification_id = uuid.uuid4().urn
@@ -93,6 +95,11 @@ class RelationshipAnnounceNotifier:
     def send(self):
         url = self.target_inbox
         headers = {"Content-Type": "application/ld+json"}
+
+        # Add Authorization header if token is provided
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
         payload = self.notification.to_jsonld()
         resp = requests.post(url, headers=headers, json=payload)
         #print(payload)
