@@ -323,10 +323,6 @@ HAL_INBOX_URL=https://inbox-preprod.archives-ouvertes.fr/
 # Software Heritage Configuration
 SWH_BASE_URL=https://archive.softwareheritage.org
 SWH_INBOX_URL=https://inbox.softwareheritage.org
-
-# Development URLs
-DEV_BASE_URL=http://127.0.0.1:5500/
-DEV_INBOX_URL=http://127.0.0.1:5500/inbox
 ```
 
 ## Development
