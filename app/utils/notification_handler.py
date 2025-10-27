@@ -286,6 +286,7 @@ def send_notifications_to_hal(document_id: str) -> int:
                 software_name=notification['softwareName'],
                 software_repo=None,
                 mention_type=None,
+                mention_context=None,
                 target_id=config['base_url'],  # target_id
                 target_inbox=config['inbox_url'],  # target_inbox
                 token=config['token']
