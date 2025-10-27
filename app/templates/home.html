@@ -130,11 +130,11 @@
 
     <div class="links">
       <h2>Endpoints</h2>
-      <a href="/health">Health Check (JSON)</a>
-      <a href="/api/software/status">Software API Status</a>
-      <a href="/api/documents/status">Documents API Status</a>
+      <a href="{{ url_for('health') }}">Health Check (JSON)</a>
+      <a href="{{ url_for('software_status') }}">Software API Status</a>
+      <a href="{{ url_for('documents_status') }}">Documents API Status</a>
       {% if status == 'up' %}
-        <a href="/notifications">View Notifications</a>
+        <a href="{{ url_for('show_notifications') }}">View Notifications</a>
       {% endif %}
     </div>
   </main>

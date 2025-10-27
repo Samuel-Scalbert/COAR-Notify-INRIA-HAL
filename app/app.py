@@ -1,6 +1,7 @@
 import json
 import os
 from flask import Flask, render_template, jsonify
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.utils.db import init_db, get_db
 from dotenv import load_dotenv
 
@@ -20,6 +21,11 @@ flask_config["ARANGO_DB"] = os.environ.get("ARANGO_DB", flask_config.get("ARANGO
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 app.config.update(flask_config)
+
+# Configure ProxyFix for reverse proxy
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+)
 
 # Import routes after app creation to avoid circular imports
 from app.routes import api_software, api_documents, coar_inbox, api_status
