@@ -83,12 +83,28 @@ class ActionReviewNotifier:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
-        payload = self.notification.to_jsonld()  # already a dict
-        resp = requests.post(url, headers=headers, json=payload)
-        #print(payload)
+        payload = self.notification.to_jsonld()
+
+        # Add debugging information
+        # print(f"Sending notification to: {url}")
+        # print(f"Headers: {headers}")
+        # print(f"Payload: {payload}")
+
+        # Add timeout to prevent hanging
+        resp = None
         try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+            print(f"Response status: {resp.status_code}")
+            print(f"Response body: {resp.text}")
             resp.raise_for_status()
-        except requests.HTTPError:
-            print("Status:", resp.status_code)
+        except requests.exceptions.Timeout:
+            print(f"Timeout while sending notification to {url}")
             raise
+        except requests.exceptions.ConnectionError as e:
+            print(f"Connection error while sending to {url}: {e}")
+            raise
+        except requests.HTTPError:
+            print(f"HTTP error: {resp.status_code} - {resp.text}")
+            raise
+
         return resp
