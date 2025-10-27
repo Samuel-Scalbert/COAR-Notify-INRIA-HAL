@@ -139,3 +139,11 @@ def insert_new_document():
                 "by_provider": notification_results
             }
         }), 201
+    else:
+        # Document already exists
+        return jsonify({
+            "status": "exists",
+            "message": "Document already exists in the database",
+            "document_id": document_id,
+            "file": original_filename
+        }), 409
