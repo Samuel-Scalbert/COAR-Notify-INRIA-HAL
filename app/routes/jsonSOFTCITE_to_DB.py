@@ -2,10 +2,8 @@ from flask import request, jsonify
 from app.app import app  # only import app
 from app.utils.db import insert_json_file
 from app.utils.notification_JSON_to_HAL import notification_JSON_to_HAL
-from app.auth import require_api_key
 
 @app.route("/insert", methods=["POST"])
-@require_api_key
 def insert_new_file():
     """
     Expects a JSON file uploaded as form-data with key 'file'.

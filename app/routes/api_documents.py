@@ -1,7 +1,9 @@
 from app.app import app
 from flask import jsonify
+from app.auth import require_api_admin_key
 
 @app.route('/api/documents/status', methods=['GET'])
+@require_api_admin_key
 def documents_status():
     from app.app import db
     document_col = db["documents"]
@@ -13,6 +15,7 @@ def documents_status():
     return jsonify(status_info)
 
 @app.route('/api/documents/<id>', methods=['GET'])
+@require_api_admin_key
 def document_from_id(id):
     from app.app import db
     document_col = db["documents"]
@@ -22,8 +25,9 @@ def document_from_id(id):
     except Exception:
         return jsonify({"error": "Document not found"}), 404
 
-@app.route('/api/documents/<id_document>/software', methods=['GET'])
-def document_software_all_from_id(id_document):
+@app.route('/api/documents/<id_document>/softwares', methods=['GET'])
+@require_api_admin_key
+def document_softwares_all_from_id(id_document):
     from app.app import db
     query = f"""
     FOR edge IN edge_doc_to_software
@@ -34,8 +38,9 @@ def document_software_all_from_id(id_document):
     result = db.AQLQuery(query, rawResults=True)
     return jsonify(result[0:])
 
-@app.route('/api/documents/<id_document>/software/<id_software>', methods=['GET'])
-def document_software_from_id(id_document, id_software):
+@app.route('/api/documents/<id_document>/softwares/<id_software>', methods=['GET'])
+@require_api_admin_key
+def document_softwares_from_id(id_document, id_software):
     from app.app import db
     query = f"""
     let soft_name = document("software/{id_software}")
