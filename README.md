@@ -56,17 +56,102 @@ FLASK_PORT=5000
 
 ## API
 
-Software mentions' routes:
-- /api/software/status
-- /api/software/<id_software>
-- /api/software_mention/<id_mention>
+### Base URL and reverse-proxy prefix
+- Default base URL (local): `http://localhost:5000`
+- If served behind NGINX under a prefix (e.g., `/coar`), prepend that prefix to all paths (e.g., `/coar/api/software/status`, `/coar/health`).
 
-Documents' routes:
-- /api/document/status
-- /api/document/<id>
-- /api/document/<id_document>/software
-- /api/document/<id_document>/software/<id_software>
+### Authentication
+Some endpoints require an API key via the `x-api-key` header. The key is read from `auth_admin.json` (`TOKEN`).
 
+Example header:
+```
+x-api-key: <your-token>
+```
+
+### Health
+- GET `/health`
+  - Returns service status and basic ArangoDB info.
+  - 200 when up; 503 when down.
+
+Example:
+```sh
+curl -s http://localhost:5000/health | jq
+```
+
+### General status (with auth)
+- GET `/status`
+  - Headers: `x-api-key`
+  - Checks API access and database reachability; lists existence of key collections.
+
+Example:
+```sh
+curl -s -H "x-api-key: $API_KEY" http://localhost:5000/status | jq
+```
+
+### Software endpoints
+- GET `/api/software/status`
+  - Returns a count of documents in the `software` collection.
+- GET `/api/software/<id_software>`
+  - Returns all software docs with the same normalized name as the given software `_key`.
+- GET `/api/software_mention/<id_mention>`
+  - Returns a single software mention document by `_key`.
+
+Examples:
+```sh
+curl -s http://localhost:5000/api/software/status | jq
+curl -s http://localhost:5000/api/software/soft123 | jq
+curl -s http://localhost:5000/api/software_mention/mention456 | jq
+```
+
+### Document endpoints
+- GET `/api/documents/status`
+  - Returns a count of documents in the `documents` collection.
+- GET `/api/documents/<id>`
+  - Returns the document with `_key = <id>`.
+- GET `/api/documents/<id_document>/software`
+  - Returns all software linked to a given document via `edge_doc_to_software`.
+- GET `/api/documents/<id_document>/software/<id_software>`
+  - Returns the software linked to the document matching the normalized name of `<id_software>`.
+
+Examples:
+```sh
+curl -s http://localhost:5000/api/documents/status | jq
+curl -s http://localhost:5000/api/documents/docABC | jq
+curl -s http://localhost:5000/api/documents/docABC/software | jq
+curl -s http://localhost:5000/api/documents/docABC/software/soft123 | jq
+```
+
+### Ingestion (with auth)
+- POST `/insert`
+  - Headers: `x-api-key`
+  - Content-Type: `multipart/form-data` with a field `file` containing the JSON to insert.
+  - Returns 201 on new insert, 409 if already exists. Triggers notification send attempt.
+
+Example:
+```sh
+curl -s -X POST \
+  -H "x-api-key: $API_KEY" \
+  -F file=@/path/to/your.json \
+  http://localhost:5000/insert | jq
+```
+
+### COAR Notify inbox
+- POST `/inbox`
+  - Accepts a JSON-LD COAR notification payload.
+  - Returns 202 with a minimal summary.
+- GET `/notifications`
+  - Renders an HTML page displaying received notifications (best-effort debugging/inspection).
+
+Examples:
+```sh
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -d @notification.json \
+  http://localhost:5000/inbox | jq
+
+# View in browser:
+# http://localhost:5000/notifications
+```
 
 ## Notification
 

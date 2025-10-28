@@ -6,7 +6,7 @@ from app.auth import require_api_admin_key
 @require_api_admin_key
 def software_status():
     from app.app import db  # lazy import to avoid circular import
-    software_col = db["softwares"]
+    software_col = db["software"]
     total_count = software_col.count()
     status_info = {
         "collection_name": "software",
@@ -19,9 +19,9 @@ def software_status():
 def software_from_id(id_software):
     from app.app import db
     query = f"""
-        let soft_name = document("softwares/{id_software}")
+        let soft_name = document("software/{id_software}")
 
-        FOR soft in softwares
+        FOR soft in software
             filter soft.software_name.normalizedForm == soft_name.software_name.normalizedForm
             return soft
         """
@@ -32,7 +32,7 @@ def software_from_id(id_software):
 @require_api_admin_key
 def software_mention_from_id(id_mention):
     from app.app import db
-    software_col = db["softwares"]
+    software_col = db["software"]
     try:
         doc = software_col.fetchDocument(id_mention)  # fetch by _key
         return jsonify(doc.getStore())  # convert to dict

@@ -43,7 +43,7 @@ def document_softwares_all_from_id(id_document):
 def document_softwares_from_id(id_document, id_software):
     from app.app import db
     query = f"""
-    let soft_name = document("softwares/{id_software}")
+    let soft_name = document("software/{id_software}")
 
     FOR edge IN edge_doc_to_software
         FILTER edge._from == "documents/{id_document}"

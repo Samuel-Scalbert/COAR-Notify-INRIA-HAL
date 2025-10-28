@@ -46,7 +46,7 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
     but skip if the document already exists.
     """
     documents_collection = check_or_create_collection(db, "documents")
-    softwares_collection = check_or_create_collection(db, "softwares")
+    software_collection = check_or_create_collection(db, "software")
     doc_soft_edge = check_or_create_collection(db, "edge_doc_to_software", "Edges")
     blacklist = load_blacklist(blacklist_csv)
 
@@ -79,7 +79,7 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
             mention["software_name"] = mention.pop("software-name")
             mention["software_type"] = mention.pop("software-type")
 
-            software_document = softwares_collection.createDocument(mention)
+            software_document = software_collection.createDocument(mention)
             software_document.save()
 
             # Create edge from document to software
