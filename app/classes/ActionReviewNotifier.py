@@ -93,18 +93,18 @@ class ActionReviewNotifier:
         # Add timeout to prevent hanging
         resp = None
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=30)
-            print(f"Response status: {resp.status_code}")
-            print(f"Response body: {resp.text}")
+            resp = requests.post(url, headers=headers, json=payload, timeout=10)
             resp.raise_for_status()
+            return resp
         except requests.exceptions.Timeout:
             print(f"Timeout while sending notification to {url}")
-            raise
+            return None
         except requests.exceptions.ConnectionError as e:
             print(f"Connection error while sending to {url}: {e}")
-            raise
+            return None
         except requests.HTTPError:
             print(f"HTTP error: {resp.status_code} - {resp.text}")
-            raise
-
-        return resp
+            return None
+        except Exception as e:
+            print(f"Unexpected error while sending notification to {url}: {e}")
+            return None
