@@ -4,7 +4,8 @@ from flask import jsonify, request
 
 from app.auth import require_api_key
 from app.utils.db import get_db
-from app.utils.notification_handler import send_notifications_to_sh, send_notifications_to_hal
+from app.utils.notification_handler import send_notifications_to_sh, send_notifications_to_hal, \
+    get_software_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +92,14 @@ def insert_new_document():
         return jsonify({"error": f"Insertion failed: {str(e)}"}), 500
 
     if inserted:
+
+        # Get notification data using the document ID (works for any provider)
+        notifications = get_software_notifications(document_id)
+
         notification_results = {}
         try:
             # Send notifications to HAL and collect results
-            hal_notifications = send_notifications_to_hal(document_id)
+            hal_notifications = send_notifications_to_hal(document_id, notifications)
             notification_results["hal"] = {
                 "sent": hal_notifications,
                 "failed": max(0, 1 - hal_notifications)  # Assuming 1 total attempt
@@ -109,7 +114,7 @@ def insert_new_document():
 
         try:
             # Send notifications to Software Heritage and collect results
-            swh_notifications = send_notifications_to_sh(document_id)
+            swh_notifications = send_notifications_to_sh(document_id, notifications)
             notification_results["swh"] = {
                 "sent": swh_notifications,
                 "failed": max(0, 1 - swh_notifications)  # Assuming 1 total attempt

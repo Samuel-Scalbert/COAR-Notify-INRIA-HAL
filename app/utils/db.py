@@ -186,7 +186,7 @@ class DatabaseManager:
         return None
 
     def execute_aql_query(self, query: str, bind_vars: Optional[Dict[str, Any]] = None,
-                         raw_results: bool = False) -> Any:
+                          raw_results: bool = False) -> Any:
         """
         Execute an AQL query.
 
@@ -275,8 +275,12 @@ class DatabaseManager:
             logger.error(f"Failed to check document existence: {e}")
             return False
 
-    def insert_document_as_json(self, document_id: str, file_json: Union[FileStorage, Dict[str, Any]],
-                                blacklist_csv: str = "./app/static/data/blacklist.csv") -> bool:
+    def insert_document_as_json(
+            self,
+            document_id: str,
+            file_json: Union[FileStorage, Dict[str, Any]],
+            blacklist_csv: str = "./app/static/data/blacklist.csv"
+    ) -> bool:
         """
         Insert a JSON file into ArangoDB with document, software, and edge collections.
 
@@ -305,7 +309,7 @@ class DatabaseManager:
 
             # Check if document already exists
             if self.document_exists("documents", "file_hal_id", document_id):
-                logger.info(f"Document with ID '{document_id}' already exists in DB. Skipping.")
+                logger.warning(f"Document with ID '{document_id}' already exists in DB. Skipping.")
                 return False
 
             # Insert main document
@@ -422,7 +426,7 @@ class DatabaseManager:
 
             if updated_count > 0:
                 logger.info(f"Updated verification status for {updated_count} software entries "
-                           f"(HAL: {hal_id}, Software: {software_name}, Status: {verification_status})")
+                            f"(HAL: {hal_id}, Software: {software_name}, Status: {verification_status})")
             else:
                 logger.warning(f"No software entries found for HAL: {hal_id}, Software: {software_name}")
 

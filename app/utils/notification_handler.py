@@ -198,12 +198,13 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
     return config
 
 
-def send_notifications_to_sh(document_id: str) -> int:
+def send_notifications_to_sh(document_id: str, notifications=None) -> int:
     """
     Send COAR notifications specifically to Software Heritage for software mentions.
 
     Args:
         file: Uploaded file object containing software metadata
+        notifications: List of notification data for software mentions in the document
 
     Returns:
         int: Number of notifications successfully sent
@@ -215,10 +216,10 @@ def send_notifications_to_sh(document_id: str) -> int:
 
         logger.info(f"Processing Software Heritage notifications for document: {document_id}")
 
-        # Get notification data using the document ID
-        notifications = get_software_notifications(document_id)
+        # Get notification data using the document ID (works for any provider)
         if not notifications:
-            logger.warning(f"No software notifications found for {document_id}")
+            logger.warning(f"No software retrieved for {document_id}. "
+                           f"No notifications will be sent.")
             return 0
 
         # Get Software Heritage specific configuration
@@ -249,12 +250,13 @@ def send_notifications_to_sh(document_id: str) -> int:
         logger.error(f"Failed to process Software Heritage notifications for {document_id}: {e}")
         return 0
 
-def send_notifications_to_hal(document_id: str) -> int:
+def send_notifications_to_hal(document_id: str, notifications=None) -> int:
     """
     Send COAR notifications to appropriate providers for software mentions in a document.
 
     Args:
         file: Uploaded file object containing software metadata
+        notifications: List of notification data for software mentions in the document
 
     Returns:
         int: Number of notifications successfully sent
@@ -267,9 +269,9 @@ def send_notifications_to_hal(document_id: str) -> int:
         logger.info(f"Processing notifications for HAL for document: {document_id}")
 
         # Get notification data using the document ID (works for any provider)
-        notifications = get_software_notifications(document_id)
         if not notifications:
-            logger.warning(f"No software notifications found for {document_id}")
+            logger.warning(f"No software retrieved for {document_id}. "
+                           f"No notifications will be sent.")
             return 0
 
         # Get provider-specific configuration
