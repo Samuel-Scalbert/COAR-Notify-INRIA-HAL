@@ -16,7 +16,6 @@ from research papers.
     - [Document Management](#document-management)
     - [Software Endpoints](#software-endpoints)
     - [Blacklist Management](#blacklist-management)
-    - [Provider Detection](#provider-detection)
     - [COAR Notify Inbox](#coar-notify-inbox)
 - [Notification System](#notification-system)
 - [Production Deployment](#production-deployment)
