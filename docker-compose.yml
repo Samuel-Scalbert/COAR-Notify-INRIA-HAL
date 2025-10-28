@@ -41,7 +41,7 @@ services:
       - ./auth_admin.json:/app/auth_admin.json
     restart: unless-stopped
     # Wait for the internal ArangoDB port (8529) with positional host and port args
-    command: ["wait-for-it", "--host=arangodb", "--port=8529", "--", "gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app.app:app"]
+    command: ["wait-for-it", "--host=arangodb", "--port=8529", "--", "gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "60", "app.app:app"]
     healthcheck:
       # Avoid relying on curl/wget; use Python stdlib to probe the HTTP endpoint
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=2)\""]
