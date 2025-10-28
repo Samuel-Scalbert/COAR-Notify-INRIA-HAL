@@ -116,6 +116,37 @@ For comprehensive database documentation including schemas, queries, and perform
 - Default base URL (local): `http://localhost:5000`
 - If served behind NGINX under a prefix (e.g., `/coar`), prepend that prefix to all paths (e.g., `/coar/api/software/status`, `/coar/health`).
 
+### API Entry Points Summary
+
+| Method | Endpoint | Auth Required | Description |
+|--------|----------|---------------|-------------|
+| **Health & Status** |
+| GET | `/` | No | Home page with database status |
+| GET | `/health` | No | Service health check |
+| GET | `/status` | Yes | Upload capability check |
+| **Document Management** |
+| GET | `/api/documents/status` | No | Documents collection status |
+| GET | `/api/documents/<id>` | No | Get document by ID |
+| GET | `/api/documents/<id>/software` | No | All software for document |
+| GET | `/api/documents/<id>/software/<id_sw>` | No | Specific software for document |
+| POST | `/api/document` | Yes | Insert document (triggers notifications) |
+| **Software Endpoints** |
+| GET | `/api/software/status` | No | Software collection status |
+| GET | `/api/software/name/<name>` | No | Software by normalized name |
+| GET | `/api/software/<id_mention>` | No | Software mention by ID |
+| **Blacklist Management** |
+| GET | `/api/blacklist` | No | View/search blacklist |
+| GET | `/api/blacklist/stats` | No | Blacklist statistics |
+| POST | `/api/blacklist` | Yes | Add term to blacklist |
+| DELETE | `/api/blacklist/<term>` | Yes | Remove term from blacklist |
+| POST | `/api/blacklist/reload` | Yes | Reload blacklist from file |
+| GET | `/api/blacklist/export` | No | Export blacklist as CSV |
+| POST | `/api/blacklist/import` | Yes | Import blacklist from CSV |
+| **COAR Notify Inbox** |
+| GET | `/inbox` | No | Get inbox API documentation |
+| POST | `/inbox` | No | Receive COAR notification |
+| GET | `/notifications` | No | View received notifications (HTML) |
+
 ### Authentication
 
 Some endpoints require an API key via the `x-api-key` header. The key is read from `auth_admin.json` (`TOKEN`).
@@ -149,6 +180,23 @@ curl -s -H "x-api-key: $API_KEY" http://localhost:5000/status | jq
 
 ### Document Management
 
+#### Documents Collection Status
+- **GET `/api/documents/status`**
+  - Returns count and status of documents collection
+
+#### Get Document by ID
+- **GET `/api/documents/<id>`**
+  - Returns document metadata by HAL identifier
+  - Returns 404 if not found
+
+#### Get Document Software (All)
+- **GET `/api/documents/<id_document>/software`**
+  - Returns all software mentions for a specific document
+
+#### Get Document Software (Specific)
+- **GET `/api/documents/<id_document>/software/<id_software>`**
+  - Returns a specific software mention for a document
+
 #### Insert Document
 - **POST `/api/document`**
   - Headers: `x-api-key`
@@ -156,10 +204,20 @@ curl -s -H "x-api-key: $API_KEY" http://localhost:5000/status | jq
     - `file`: JSON file containing software metadata (required)
     - `document_id`: HAL identifier for the document (required)
   - Returns 201 on new insert, 409 if already exists
-  - Triggers notification send attempt
+  - Triggers notification send attempt to HAL and Software Heritage
 
-Example:
+Examples:
 ```sh
+# Get documents status
+curl -s http://localhost:5000/api/documents/status | jq
+
+# Get specific document
+curl -s http://localhost:5000/api/documents/hal-01478788 | jq
+
+# Get all software for a document
+curl -s http://localhost:5000/api/documents/hal-01478788/software | jq
+
+# Insert new document
 curl -s -X POST \
   -H "x-api-key: $API_KEY" \
   -F "file=@/path/to/your.json" \
@@ -171,21 +229,27 @@ curl -s -X POST \
 
 #### Software Status
 - **GET `/api/software/status`**
-  - Returns a count of documents in the `software` collection
+  - Returns count and status of software collection
 
-#### Get Software by ID
-- **GET `/api/software/<id_software>`**
-  - Returns all software docs with the same normalized name as the given software `_key`
+#### Get Software by Normalized Name
+- **GET `/api/software/name/<name>`**
+  - Returns all software mentions with the same normalized name
 
-#### Get Software Mention
-- **GET `/api/software_mention/<id_mention>`**
+#### Get Software Mention by ID
+- **GET `/api/software/<id_mention>`**
   - Returns a single software mention document by `_key`
+  - Returns 404 if not found
 
 Examples:
 ```sh
+# Get software collection status
 curl -s http://localhost:5000/api/software/status | jq
-curl -s http://localhost:5000/api/software/soft123 | jq
-curl -s http://localhost:5000/api/software_mention/mention456 | jq
+
+# Get software by normalized name
+curl -s http://localhost:5000/api/software/name/python | jq
+
+# Get specific software mention
+curl -s http://localhost:5000/api/software/mention456 | jq
 ```
 
 ### Blacklist Management
@@ -214,6 +278,12 @@ The blacklist system filters out generic or non-software terms during document p
   - Headers: `x-api-key`
   - Returns 200 on success, 404 if term not found
 
+#### Reload Blacklist from File
+- **POST `/api/blacklist/reload`**
+  - Headers: `x-api-key`
+  - Reloads blacklist from CSV file
+  - Returns total number of terms loaded
+
 #### Export Blacklist
 - **GET `/api/blacklist/export`**
   - Downloads the blacklist as a CSV file
@@ -224,11 +294,15 @@ The blacklist system filters out generic or non-software terms during document p
   - Form Data:
     - `file`: CSV file to import (required)
     - `overwrite`: Whether to overwrite existing blacklist (default: false)
+  - Returns import results with statistics
 
 Examples:
 ```sh
 # View blacklist
 curl -s http://localhost:5000/api/blacklist | jq
+
+# Search blacklist terms
+curl -s "http://localhost:5000/api/blacklist?search=python&limit=10" | jq
 
 # Get statistics
 curl -s http://localhost:5000/api/blacklist/stats | jq
@@ -240,54 +314,78 @@ curl -s -X POST \
   -d '{"term": "example"}' \
   http://localhost:5000/api/blacklist | jq
 
+# Remove term (requires API key)
+curl -s -X DELETE \
+  -H "x-api-key: $API_KEY" \
+  http://localhost:5000/api/blacklist/example | jq
+
+# Reload blacklist (requires API key)
+curl -s -X POST \
+  -H "x-api-key: $API_KEY" \
+  http://localhost:5000/api/blacklist/reload | jq
+
 # Export blacklist
 curl -s http://localhost:5000/api/blacklist/export -o blacklist.csv
 ```
 
-### Provider Detection
-
-The system automatically detects data providers from filenames and document IDs.
-
-#### Detect Provider from Filename
-- **GET `/api/software/provider/<filename>`**
-  - Returns provider information for the given filename
-
-#### List Supported Providers
-- **GET `/api/software/providers`**
-  - Returns all supported providers and their detection patterns
-
-Supported providers:
-- **HAL**: `hal-`, `oai:hal:`, `.hal.` patterns
-- **Software Heritage**: `swh-`, `softwareheritage`, `.swh.` patterns
-
-Example:
-```sh
-curl -s http://localhost:5000/api/software/provider/hal-01478788 | jq
-curl -s http://localhost:5000/api/software/providers | jq
-```
-
 ### COAR Notify Inbox
+
+The COAR Notify inbox handles bidirectional communication for software mention verification workflows.
+
+#### Get Inbox Documentation
+- **GET `/inbox`**
+  - Returns comprehensive API documentation for the COAR Notify inbox
+  - Includes request/response examples, supported notification types, and usage instructions
 
 #### Receive Notification
 - **POST `/inbox`**
   - Accepts a JSON-LD COAR notification payload
-  - Returns 202 with a minimal summary
+  - Content-Type: `application/json` or `application/ld+json`
+  - Supported types: `Accept`, `Reject`
+  - Returns 202 with notification processing summary
+  - Automatically updates verification status in database
 
-#### View Notifications
+#### View Received Notifications
 - **GET `/notifications`**
-  - Renders an HTML page displaying received notifications (best-effort debugging/inspection)
+  - Renders an HTML page displaying all received notifications
+  - Useful for debugging and inspection during development
 
 Examples:
 ```sh
-# Send notification
+# Get inbox API documentation
+curl -s http://localhost:5000/inbox | jq
+
+# Send Accept notification
 curl -s -X POST \
   -H "Content-Type: application/json" \
-  -d @notification.json \
+  -d '{
+    "type": "Accept",
+    "actor": {
+      "type": "Person",
+      "id": "https://orcid.org/0000-0000-0000-0000"
+    },
+    "object": {
+      "type": "Offer",
+      "id": "urn:uuid:12345678-1234-1234-1234-123456789012",
+      "object": {
+        "type": "Document",
+        "id": "oai:HAL:hal-01478788",
+        "sorg:citation": {
+          "name": "SoftwareName",
+          "type": "Software"
+        }
+      }
+    }
+  }' \
   http://localhost:5000/inbox | jq
 
 # View notifications in browser
 # http://localhost:5000/notifications
 ```
+
+**Supported Notification Types:**
+- **Accept**: Verifies a software mention as correct by the author
+- **Reject**: Marks a software mention as incorrect by the author
 
 ## Notification System
 
