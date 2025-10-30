@@ -352,7 +352,7 @@ class DatabaseManager:
         Get software notifications for a HAL document.
 
         Args:
-            hal_filename: HAL document identifier
+            document_id: HAL document identifier
 
         Returns:
             List of notification data
