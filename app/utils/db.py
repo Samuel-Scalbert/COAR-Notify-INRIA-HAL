@@ -352,7 +352,7 @@ class DatabaseManager:
         Get software notifications for a HAL document.
 
         Args:
-            hal_filename: HAL document identifier
+            document_id: HAL document identifier
 
         Returns:
             List of notification data
@@ -480,7 +480,7 @@ class DatabaseManager:
         Get software documents by normalized name.
 
         Args:
-            id_software: Software identifier
+            name: Software name
 
         Returns:
             List of matching software documents
@@ -596,9 +596,9 @@ def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.c
     Legacy function for backward compatibility.
 
     Args:
-        file_json: File object or dictionary
+        file_json: File object or dictionary containing the data
         db: Database object (ignored, uses global db_manager)
-        blacklist_csv: Path to blacklist file
+        blacklist_csv: Path to blacklist CSV file
 
     Returns:
         bool: True if inserted, False if already exists
