@@ -2,10 +2,11 @@ from flask import request, jsonify, render_template
 
 from app.app import app
 from app.utils.notification_handler import accept_notification, reject_notification
-
+from app.auth import require_api_key
 received_notifications = []
 
 @app.route("/inbox", methods=["POST"])
+@require_api_key
 def receive_notification():
     """
     COAR Notify inbox.

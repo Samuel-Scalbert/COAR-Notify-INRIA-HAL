@@ -5,12 +5,22 @@ import json
 with open("auth_admin.json") as f:
     config = json.load(f)
     API_KEY = config["TOKEN"]
+    API_ADMIN_KEY = config["admin"]
 
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         key = request.headers.get("x-api-key")
         if key != API_KEY:
+            return jsonify({"error": "Unauthorized Token"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+def require_api_admin_key(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        key = request.headers.get("x-api-key")
+        if key != API_ADMIN_KEY:
             return jsonify({"error": "Unauthorized Token"}), 401
         return f(*args, **kwargs)
     return decorated

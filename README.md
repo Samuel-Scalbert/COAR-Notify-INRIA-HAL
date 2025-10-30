@@ -466,6 +466,21 @@ SWH_BASE_URL=https://archive.softwareheritage.org
 SWH_INBOX_URL=https://inbox.softwareheritage.org
 ```
 
+## Receiving notifications
+
+The inbox is able to receive the accept/reject notification directly in the inbox.
+
+the handle of software verification notifications from HAL:
+
+accept_notification(notification)
+Marks a software as verified by its author. It extracts the HAL document ID and software name from the notification, finds the corresponding software in the database via the document-to-software edge, and sets verification_by_author to True.
+
+reject_notification(notification)
+Marks a software as not verified by the author. It follows the same process as accept_notification, but sets verification_by_author to False.
+
+Both functions run the query on the ArangoDB database.
+
+
 ## Production Deployment
 
 ### Nginx Reverse Proxy
