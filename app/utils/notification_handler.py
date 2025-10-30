@@ -155,7 +155,7 @@ def get_software_notifications(document_id: str) -> list[Dict[str, Any]]:
     Retrieve software notifications for a given HAL document.
 
     Args:
-        hal_filename: HAL filename without extension
+        document_id: HAL filename without extension
 
     Returns:
         List of notification data for software mentions in the document
