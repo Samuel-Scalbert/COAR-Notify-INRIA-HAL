@@ -203,7 +203,7 @@ def send_notifications_to_sh(document_id: str, notifications=None) -> int:
     Send COAR notifications specifically to Software Heritage for software mentions.
 
     Args:
-        file: Uploaded file object containing software metadata
+        document_id: Document identifier for tracking the software metadata
         notifications: List of notification data for software mentions in the document
 
     Returns:
