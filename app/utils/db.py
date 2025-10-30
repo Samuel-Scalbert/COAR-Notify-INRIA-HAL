@@ -480,7 +480,7 @@ class DatabaseManager:
         Get software documents by normalized name.
 
         Args:
-            id_software: Software identifier
+            name: Normalized software name to search for
 
         Returns:
             List of matching software documents
