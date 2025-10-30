@@ -255,7 +255,7 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> int:
     Send COAR notifications to appropriate providers for software mentions in a document.
 
     Args:
-        file: Uploaded file object containing software metadata
+        document_id: Identifier of the document containing software metadata
         notifications: List of notification data for software mentions in the document
 
     Returns:
