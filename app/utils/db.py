@@ -365,21 +365,8 @@ class DatabaseManager:
                         FILTER edge._from == doc._id
                         LET mention = DOCUMENT(edge._to)
                         COLLECT softwareName = mention.software_name.normalizedForm INTO mentionsGroup
-                        // Compute the max score per attribute across all mentions
-                        LET maxScores = {
-                            used: MAX(mentionsGroup[*].mention.documentContextAttributes.used.score),
-                            created: MAX(mentionsGroup[*].mention.documentContextAttributes.created.score),
-                            shared: MAX(mentionsGroup[*].mention.documentContextAttributes.shared.score)
-                        }
-                        // Find the attribute with the overall max score
-                        LET maxAttribute = FIRST(
-                            FOR attr IN ATTRIBUTES(maxScores)
-                                FILTER maxScores[attr] == MAX(VALUES(maxScores))
-                                RETURN attr
-                        )
                         RETURN {
                             softwareName: softwareName,
-                            maxDocumentAttribute: maxAttribute,
                             contexts: mentionsGroup[*].mention.context
                         }
             """
