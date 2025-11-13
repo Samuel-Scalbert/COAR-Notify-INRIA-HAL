@@ -1,7 +1,6 @@
 from flask import request, jsonify, render_template
-
-from app.app import app
-from app.utils.notification_handler import accept_notification, reject_notification
+from app.app import app, db
+from app.utils.notification_handler import post_notification_to_viz
 from app.auth import require_api_key
 received_notifications = []
 
@@ -18,10 +17,20 @@ def receive_notification():
     # Store the notification for display
     received_notifications.append(notification)
 
-    if getattr(notification, "type", None)=="Accept":
-        accept_notification(notification.to_jsonld())
-    if getattr(notification, "type", None)=="Reject":
-        reject_notification(notification.to_jsonld())
+    notification_type = getattr(notification, "type", None)
+    if notification_type in ("Accept", "Reject"):
+        notification_json = notification.to_jsonld()
+
+        hal_id_full = notification_json['object']['object']['id']
+        hal_id = hal_id_full.replace('oai:HAL:', '')
+        software_name = notification_json['object']['object']['sorg:citation']['name']
+
+        post_notification_to_viz(
+            hal_id,
+            software_name,
+            db,
+            accepted=(notification_type == "Accept")
+        )
 
     # Respond with the type and actor info
     return jsonify({

@@ -1,74 +1,35 @@
+import requests
 
-def accept_notification(notification):
-    from app.app import app, db
-    from pyArango.connection import Connection
-
-    hal_id_full = notification['object']['object']['id']
-    hal_id = hal_id_full.replace('oai:HAL:', '')
-    software_name = notification['object']['object']['sorg:citation']['name']
-    print(hal_id, software_name)
-
-    query = f"""
-        FOR doc IN documents
-            FILTER doc.file_hal_id == "{hal_id}"
-            FOR edge_soft IN edge_doc_to_software
-                FILTER edge_soft._from == doc._id 
-                LET software = DOCUMENT(edge_soft._to)
-                FILTER software.software_name.normalizedForm == "{software_name}"
-                UPDATE software WITH {{ verification_by_author: true }} IN software
+def post_notification_to_viz(hal_id: str, software_name: str, db, accepted: bool = True):
     """
+    Send a notification to coar-viz (accepted or rejected) and update local DB.
+    """
+    # Update DB
+    query = """
+    FOR doc IN documents
+      FILTER doc.file_hal_id == @hal_id
+      FOR edge_soft IN edge_doc_to_software
+        FILTER edge_soft._from == doc._id
+        LET software = DOCUMENT(edge_soft._to)
+        FILTER software.software_name.normalizedForm == @software_name
+        UPDATE software WITH { verification_by_author: @verification } IN software
+    """
+    bind_vars = {
+        "hal_id": hal_id,
+        "software_name": software_name,
+        "verification": accepted
+    }
+    result = db.AQLQuery(query, bindVars=bind_vars, rawResults=True)
 
-    result = db.AQLQuery(query, rawResults=True)
-
-    try:
-        host = app.config['ARANGO_HOST']
-        port = app.config['ARANGO_PORT']
-        username = app.config['ARANGO_USERNAME']
-        password = app.config['ARANGO_PASSWORD']
-
-        conn = Connection(
-            arangoURL=f"http://{host}:{port}",
-            username=username,
-            password=password
-        )
-
-        Viz_db = conn["SOF-viz-COAR"]
-        result = Viz_db.AQLQuery(query, rawResults=True)
-    except Exception as error:
-        print(error)
-
-
-def reject_notification(notification):
-    from app.app import app, db
-    from pyArango.connection import Connection
-    hal_id_full = notification['object']['object']['id']
-    hal_id = hal_id_full.replace('oai:HAL:', '')
-    software_name = notification['object']['object']['sorg:citation']['name']
-    print(hal_id, software_name)
-    query = f"""
-        FOR doc IN documents
-        FILTER doc.file_hal_id == "{hal_id}"
-        FOR edge_soft IN edge_doc_to_software
-            FILTER edge_soft._from == doc._id 
-            LET software = DOCUMENT(edge_soft._to)
-            FILTER software.software_name.normalizedForm == "{software_name}"
-            UPDATE software WITH {{ verification_by_author: False }} IN software
-        """
-    result = db.AQLQuery(query, rawResults=True)
+    # POST notification
+    endpoint = "accepted_notification" if accepted else "rejected_notification"
+    url = f"http://coar-viz:8080/api/{endpoint}/{hal_id}/{software_name}"
 
     try:
-        host = app.config['ARANGO_HOST']
-        port = app.config['ARANGO_PORT']
-        username = app.config['ARANGO_USERNAME']
-        password = app.config['ARANGO_PASSWORD']
-
-        conn = Connection(
-            arangoURL=f"http://{host}:{port}",
-            username=username,
-            password=password
-        )
-
-        Viz_db = conn["SOF-viz-COAR"]
-        result = Viz_db.AQLQuery(query, rawResults=True)
-    except Exception as error:
-        print(error)
+        response = requests.post(url, timeout=5)
+        response.raise_for_status()
+        print(f"✅ Successfully sent {endpoint} notification to {url}")
+        return response
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to send notification: {e}")
+        return None
