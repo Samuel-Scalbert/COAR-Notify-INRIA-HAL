@@ -9,7 +9,7 @@ from app.utils.notification_handler import send_notifications_to_sh, send_notifi
 
 logger = logging.getLogger(__name__)
 
-@app.route('/api/documents/status', methods=['GET'])
+@app.route('/api/documents', methods=['GET'])
 def documents_status():
     try:
         db_manager = get_db()
@@ -23,7 +23,7 @@ def documents_status():
         logger.error(f"Failed to get documents status: {e}")
         return jsonify({"error": "Failed to retrieve documents status"}), 500
 
-@app.route('/api/documents/<id>', methods=['GET'])
+@app.route('/api/document/<id>', methods=['GET'])
 def document_from_id(id):
     try:
         db_manager = get_db()
@@ -36,7 +36,7 @@ def document_from_id(id):
         logger.error(f"Failed to get document {id}: {e}")
         return jsonify({"error": "Failed to retrieve document"}), 500
 
-@app.route('/api/documents/<id>', methods=['DELETE'])
+@app.route('/api/document/<id>', methods=['DELETE'])
 @require_api_key
 def delete_document(id):
     """
@@ -72,7 +72,7 @@ def delete_document(id):
         logger.error(f"Failed to delete document {id}: {e}")
         return jsonify({"error": "Failed to delete document"}), 500
 
-@app.route('/api/documents/<id_document>/software', methods=['GET'])
+@app.route('/api/document/<id_document>/software', methods=['GET'])
 def document_software_all_from_id(id_document):
     try:
         db_manager = get_db()
@@ -82,7 +82,7 @@ def document_software_all_from_id(id_document):
         logger.error(f"Failed to get software for document {id_document}: {e}")
         return jsonify({"error": "Failed to retrieve document software"}), 500
 
-@app.route('/api/documents/<id_document>/software/<id_software>', methods=['GET'])
+@app.route('/api/document/<id_document>/software/<id_software>', methods=['GET'])
 def document_software_from_id(id_document, id_software):
     try:
         db_manager = get_db()

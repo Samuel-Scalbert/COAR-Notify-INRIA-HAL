@@ -7,7 +7,7 @@ from app.auth import require_api_key
 
 logger = logging.getLogger(__name__)
 
-@app.route('/api/software/status', methods=['GET'])
+@app.route('/api/software', methods=['GET'])
 def software_status():
     try:
         db_manager = get_db()

@@ -137,14 +137,14 @@ see [Database Schema Documentation](docs/database.md).
 | GET                      | `/health`                              | No            | Service health check                     |
 | GET                      | `/status`                              | Yes           | Upload capability check                  |
 | **Document Management**  |
-| GET                      | `/api/documents/status`                | No            | Documents collection status              |
-| GET                      | `/api/documents/<id>`                  | No            | Get document by ID                       |
-| DELETE                   | `/api/documents/<id>`                  | Yes           | Delete document and all software mentions|
-| GET                      | `/api/documents/<id>/software`         | No            | All software for document                |
-| GET                      | `/api/documents/<id>/software/<id_sw>` | No            | Specific software for document           |
+| GET                      | `/api/documents`                       | No            | Documents collection status              |
+| GET                      | `/api/document/<id>`                   | No            | Get document by ID                       |
+| DELETE                   | `/api/document/<id>`                   | Yes           | Delete document and all software mentions|
+| GET                      | `/api/document/<id>/software`          | No            | All software for document                |
+| GET                      | `/api/document/<id>/software/<id_sw>`  | No            | Specific software for document           |
 | POST                     | `/api/document`                        | Yes           | Insert document (triggers notifications) |
 | **Software Endpoints**   |
-| GET                      | `/api/software/status`                 | No            | Software collection status               |
+| GET                      | `/api/software`                        | No            | Software collection status               |
 | GET                      | `/api/software/name/<name>`            | No            | Software by normalized name              |
 | GET                      | `/api/software/<id_mention>`           | No            | Software mention by ID                   |
 | **Blacklist Management** |
@@ -200,18 +200,18 @@ curl -s -H "x-api-key: $API_KEY" http://localhost:5000/status | jq
 
 #### Documents Collection Status
 
-- **GET `/api/documents/status`**
+- **GET `/api/documents`**
     - Returns count and status of documents collection
 
 #### Get Document by ID
 
-- **GET `/api/documents/<id>`**
+- **GET `/api/document/<id>`**
     - Returns document metadata by HAL identifier
     - Returns 404 if not found
 
 #### Delete Document
 
-- **DELETE `/api/documents/<id>`**
+- **DELETE `/api/document/<id>`**
     - Headers: `x-api-key`
     - Deletes a document and ALL its associated software mentions
     - Performs atomic deletion: edges → software → document
@@ -242,12 +242,12 @@ Response examples:
 
 #### Get Document Software (All)
 
-- **GET `/api/documents/<id_document>/software`**
+- **GET `/api/document/<id_document>/software`**
     - Returns all software mentions for a specific document
 
 #### Get Document Software (Specific)
 
-- **GET `/api/documents/<id_document>/software/<id_software>`**
+- **GET `/api/document/<id_document>/software/<id_software>`**
     - Returns a specific software mention for a document
 
 #### Insert Document
@@ -264,18 +264,18 @@ Examples:
 
 ```sh
 # Get documents status
-curl -s http://localhost:5000/api/documents/status | jq
+curl -s http://localhost:5000/api/documents | jq
 
 # Get specific document
-curl -s http://localhost:5000/api/documents/hal-01478788 | jq
+curl -s http://localhost:5000/api/document/hal-01478788 | jq
 
 # Delete document and all software mentions (requires API key)
 curl -s -X DELETE \
   -H "x-api-key: $API_KEY" \
-  http://localhost:5000/api/documents/hal-01478788 | jq
+  http://localhost:5000/api/document/hal-01478788 | jq
 
 # Get all software for a document
-curl -s http://localhost:5000/api/documents/hal-01478788/software | jq
+curl -s http://localhost:5000/api/document/hal-01478788/software | jq
 
 # Insert new document
 curl -s -X POST \
@@ -289,7 +289,7 @@ curl -s -X POST \
 
 #### Software Status
 
-- **GET `/api/software/status`**
+- **GET `/api/software`**
     - Returns count and status of software collection
 
 #### Get Software by Normalized Name
@@ -307,7 +307,7 @@ Examples:
 
 ```sh
 # Get software collection status
-curl -s http://localhost:5000/api/software/status | jq
+curl -s http://localhost:5000/api/software | jq
 
 # Get software by normalized name
 curl -s http://localhost:5000/api/software/name/python | jq
