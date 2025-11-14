@@ -1,12 +1,14 @@
 import json
 import csv
 import logging
+import requests
 from typing import Dict, Any, List, Optional, Union
 from pyArango.connection import Connection
 from pyArango.theExceptions import CreationError
 from pyArango.database import Database
 from pyArango.collection import Collection
 from werkzeug.datastructures import FileStorage
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -378,14 +380,14 @@ class DatabaseManager:
             logger.error(f"Failed to get software notifications for {document_id}: {e}")
             return []
 
-    def update_software_verification(self, hal_id: str, software_name: str, verification_status: bool) -> bool:
+    def update_software_with_author_validation(self, document_id: str, software_name: str, accepted: bool) -> bool:
         """
         Update software verification status.
 
         Args:
-            hal_id: HAL identifier
+            document_id: HAL identifier
             software_name: Software name
-            verification_status: Verification status
+            accepted: Verification status
 
         Returns:
             True if update successful, False otherwise
@@ -398,14 +400,13 @@ class DatabaseManager:
                         FILTER edge_soft._from == doc._id
                         LET software = DOCUMENT(edge_soft._to)
                         FILTER software.software_name.normalizedForm == @software_name
-                        UPDATE software WITH { verification_by_author: @verification_status } IN software
-                    RETURN OLD
+                        UPDATE software WITH { verification_by_author: @verification } IN software
             """
 
             bind_vars = {
-                'hal_id': hal_id,
+                'hal_id': document_id,
                 'software_name': software_name,
-                'verification_status': verification_status
+                'verification': accepted
             }
 
             result = self.execute_aql_query(query, bind_vars=bind_vars, raw_results=True)
@@ -413,9 +414,9 @@ class DatabaseManager:
 
             if updated_count > 0:
                 logger.info(f"Updated verification status for {updated_count} software entries "
-                            f"(HAL: {hal_id}, Software: {software_name}, Status: {verification_status})")
+                            f"(HAL: {document_id}, Software: {software_name}, Status: {accepted})")
             else:
-                logger.warning(f"No software entries found for HAL: {hal_id}, Software: {software_name}")
+                logger.warning(f"No software entries found for HAL: {document_id}, Software: {software_name}")
 
             return updated_count > 0
 
@@ -510,16 +511,12 @@ class DatabaseManager:
                         FOR edge_soft IN edge_doc_to_software
                             FILTER edge_soft._from == doc._id
                             LET software = DOCUMENT(edge_soft._to)
-                            FILTER software.software_name.normalizedForm == @software_name
+                            FILTER software._key == @software_id
                             RETURN software
                 """
-                # Get normalized name from the software document
-                soft_doc = self.get_document_by_key("software", id_software)
-                software_name = soft_doc.get("software_name", {}).get("normalizedForm", "") if soft_doc else ""
-
                 result = self.execute_aql_query(
                     query,
-                    bind_vars={'id_document': id_document, 'software_name': software_name},
+                    bind_vars={'id_document': id_document, 'software_id': id_software},
                     raw_results=True
                 )
             else:
@@ -581,23 +578,3 @@ def get_db() -> DatabaseManager:
         raise RuntimeError("Database manager not initialized. Call init_db() first.")
     return db_manager
 
-
-# Legacy compatibility functions
-def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.csv"):
-    """
-    Legacy function for backward compatibility.
-
-    Args:
-        file_json: File object or dictionary containing the data
-        db: Database object (ignored, uses global db_manager)
-        blacklist_csv: Path to blacklist CSV file
-
-    Returns:
-        bool: True if inserted, False if already exists
-    """
-    global db_manager
-    if db_manager:
-        return db_manager.insert_document_as_json(file_json, blacklist_csv)
-    else:
-        logger.error("Database manager not initialized")
-        return False

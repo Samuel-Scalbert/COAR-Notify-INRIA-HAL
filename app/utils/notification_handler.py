@@ -4,12 +4,14 @@ from typing import Dict, Any, Optional
 from enum import Enum
 from app.classes.ActionReviewNotifier import ActionReviewNotifier
 from app.classes.RelationshipAnnounceNotifier import RelationshipAnnounceNotifier
+from app.utils.db import get_db
 
 logger = logging.getLogger(__name__)
 
 
 class ProviderType(Enum):
     """Enumeration of supported data providers."""
+    SW_VIZ = "software_viz"
     HAL = "hal"
     SOFTWARE_HERITAGE = "software_heritage"
     UNKNOWN = "unknown"
@@ -46,7 +48,8 @@ def detect_provider_from_document_data(doc_id: str) -> ProviderType:
         return ProviderType.UNKNOWN
 
 
-def get_notification_type_for_provider(provider: ProviderType, document_context: Optional[str] = None) -> NotificationType:
+def get_notification_type_for_provider(provider: ProviderType,
+                                       document_context: Optional[str] = None) -> NotificationType:
     """
     Determine the appropriate notification type for a given provider.
 
@@ -90,27 +93,6 @@ def extract_notification_data(notification: Dict[str, Any]) -> tuple[str, str]:
         raise ValueError(f"Invalid notification format: missing {e}")
 
 
-def update_software_verification(hal_id: str, software_name: str, verification_status: bool) -> bool:
-    """
-    Update software verification status in database.
-
-    Args:
-        hal_id: HAL identifier without 'oai:HAL:' prefix
-        software_name: Normalized software name
-        verification_status: True for accepted, False for rejected
-    Returns:
-        bool: True if update was successful, False otherwise
-    """
-    try:
-        from app.utils.db import get_db
-        db_manager = get_db()
-        return db_manager.update_software_verification(hal_id, software_name, verification_status)
-
-    except Exception as e:
-        logger.error(f"Failed to update software verification: {e}")
-        return False
-
-
 def accept_notification(notification: Dict[str, Any]) -> bool:
     """
     Handle notification acceptance by marking software as verified by author.
@@ -122,9 +104,10 @@ def accept_notification(notification: Dict[str, Any]) -> bool:
         bool: True if update was successful, False otherwise
     """
     try:
-        hal_id, software_name = extract_notification_data(notification)
-        logger.info(f"Accepting notification for HAL: {hal_id}, Software: {software_name}")
-        return update_software_verification(hal_id, software_name, True)
+        db_manager = get_db()
+        document_id, software_name = extract_notification_data(notification)
+        logger.info(f"Accepting notification for HAL: {document_id}, Software: {software_name}")
+        return db_manager.update_software_with_author_validation(document_id, software_name, True)
     except (ValueError, KeyError) as e:
         logger.error(f"Failed to accept notification: {e}")
         return False
@@ -141,13 +124,13 @@ def reject_notification(notification: Dict[str, Any]) -> bool:
         bool: True if update was successful, False otherwise
     """
     try:
-        hal_id, software_name = extract_notification_data(notification)
-        logger.info(f"Rejecting notification for HAL: {hal_id}, Software: {software_name}")
-        return update_software_verification(hal_id, software_name, False)
+        db_manager = get_db()
+        document_id, software_name = extract_notification_data(notification)
+        logger.info(f"Rejecting notification for HAL: {document_id}, Software: {software_name}")
+        return db_manager.update_software_with_author_validation(document_id, software_name, False)
     except (ValueError, KeyError) as e:
         logger.error(f"Failed to reject notification: {e}")
         return False
-
 
 
 def get_software_notifications(document_id: str) -> list[Dict[str, Any]]:
@@ -194,6 +177,11 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
             'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.staging.swh.network/'),
             'token': os.getenv('SWH_TOKEN'),
         })
+    elif provider == ProviderType.SW_VIZ:
+        config.update({
+            'base_url': os.getenv('SW_VIZ_URL', 'http://coar-viz:8080'),
+            'token': os.getenv('SWH_TOKEN'),
+        })
 
     return config
 
@@ -203,7 +191,7 @@ def send_notifications_to_sh(document_id: str, notifications=None) -> int:
     Send COAR notifications specifically to Software Heritage for software mentions.
 
     Args:
-        file: Uploaded file object containing software metadata
+        document_id: document identifier
         notifications: List of notification data for software mentions in the document
 
     Returns:
@@ -250,12 +238,13 @@ def send_notifications_to_sh(document_id: str, notifications=None) -> int:
         logger.error(f"Failed to process Software Heritage notifications for {document_id}: {e}")
         return 0
 
+
 def send_notifications_to_hal(document_id: str, notifications=None) -> int:
     """
     Send COAR notifications to appropriate providers for software mentions in a document.
 
     Args:
-        file: Uploaded file object containing software metadata
+        document_id: document identifier
         notifications: List of notification data for software mentions in the document
 
     Returns:
@@ -305,4 +294,43 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> int:
         return 0
 
 
+def send_validation_to_viz(document_id: str, software_name: str, accepted: bool = True):
+    """
+    Send validation information to Software Viz service.
 
+    Args:
+        document_id: HAL document identifier
+        software_name: Software name
+        accepted: Verification status
+
+    Returns:
+        bool: True if sent successfully, False otherwise
+    """
+
+    config = get_notification_config_for_provider(ProviderType.SW_VIZ)
+
+    endpoint = "accepted_notification" if accepted else "rejected_notification"
+    url = f"{config['base_url']}/api/{endpoint}/{document_id}/{software_name}"
+    headers = {
+        'Content-Type': 'application/json'
+    }
+
+    if config['token']:
+        headers['Authorization'] = f'Bearer {config["token"]}'
+
+    import requests
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            timeout=5
+        )
+        response.raise_for_status()
+        print(f"✅ Successfully sent {endpoint} notification to {url}")
+        return response
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to send notification: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error sending validation to Software Viz: {e}")
+        return False

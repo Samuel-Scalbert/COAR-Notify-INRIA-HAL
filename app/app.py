@@ -18,6 +18,10 @@ flask_config["ARANGO_USERNAME"] = os.environ.get("ARANGO_USERNAME", flask_config
 flask_config["ARANGO_PASSWORD"] = os.environ.get("ARANGO_ROOT_PASSWORD", flask_config.get("ARANGO_PASSWORD", "examplepassword"))
 flask_config["ARANGO_DB"] = os.environ.get("ARANGO_DB", flask_config.get("ARANGO_DB", "test"))
 
+# Software Viz configuration
+flask_config["SW_VIZ_URL"] = os.environ.get("SW_VIZ_URL", "")
+flask_config["SW_VIZ_TOKEN"] = os.environ.get("SW_VIZ_TOKEN", "")
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 app.config.update(flask_config)
