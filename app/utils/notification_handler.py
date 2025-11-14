@@ -2,6 +2,10 @@ import logging
 import os
 from typing import Dict, Any, Optional
 from enum import Enum
+
+import dotenv
+from dotenv import load_dotenv
+
 from app.classes.ActionReviewNotifier import ActionReviewNotifier
 from app.classes.RelationshipAnnounceNotifier import RelationshipAnnounceNotifier
 from app.utils.db import get_db
@@ -163,6 +167,8 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
     Returns:
         Dict containing provider-specific configuration
     """
+
+    load_dotenv(override=True)
     config = {}
 
     if provider == ProviderType.HAL:
@@ -174,12 +180,10 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
             'token': hal_token,
         })
     elif provider == ProviderType.SOFTWARE_HERITAGE:
-        swh_token = os.getenv('SWH_TOKEN')
-        logger.debug(f"SWH_TOKEN from environment: {'set' if swh_token else 'NOT SET'}")
         config.update({
             'base_url': os.getenv('SWH_BASE_URL', 'https://archive.softwareheritage.org'),
             'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.staging.swh.network/'),
-            'token': swh_token,
+            'token': os.getenv('SWH_TOKEN'),
         })
     elif provider == ProviderType.SW_VIZ:
         sw_viz_token = os.getenv('SW_VIZ_TOKEN')
