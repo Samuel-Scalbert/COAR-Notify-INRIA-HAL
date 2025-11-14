@@ -52,8 +52,8 @@ def delete_document(id):
         db_manager = get_db()
 
         # First check if document exists
-        doc = db_manager.get_document_by_id(id)
-        if not doc:
+        doc_result = db_manager.get_document_by_id(id)
+        if not doc_result:
             return jsonify({"error": "Document not found"}), 404
 
         # Delete the document using the database manager method

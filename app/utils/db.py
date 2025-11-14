@@ -445,20 +445,29 @@ class DatabaseManager:
 
     def get_document_by_id(self, id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a document by id
+        Get a document by id with related softwares
 
         Args:
             id: Document id
 
         Returns:
-            Document data or None if not found
+            Document data with related softwares or None if not found
         """
         try:
             query = """
-                        FOR doc IN documents
-                            FILTER doc.file_hal_id == @id
-                            RETURN doc
-                    """
+                FOR doc IN documents
+                    FILTER doc.file_hal_id == @id
+                    LET mentions = (
+                        FOR edge IN edge_doc_to_software
+                            FILTER edge._from == doc._id
+                            LET software = DOCUMENT(edge._to)
+                            RETURN software
+                    )
+                    RETURN {
+                        document: doc,
+                        mentions: mentions
+                    }
+            """
             result = self.execute_aql_query(query, bind_vars={'id': id}, raw_results=True)
             docs = list(result)
             if docs:
