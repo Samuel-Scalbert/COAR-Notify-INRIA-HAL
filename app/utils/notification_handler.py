@@ -3,9 +3,6 @@ import os
 from typing import Dict, Any, Optional
 from enum import Enum
 
-import dotenv
-from dotenv import load_dotenv
-
 from app.classes.ActionReviewNotifier import ActionReviewNotifier
 from app.classes.RelationshipAnnounceNotifier import RelationshipAnnounceNotifier
 from app.utils.db import get_db
@@ -168,7 +165,6 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
         Dict containing provider-specific configuration
     """
 
-    load_dotenv(override=True)
     config = {}
 
     if provider == ProviderType.HAL:
