@@ -226,6 +226,9 @@ def send_notifications_to_sh(document_id: str, notifications=None) -> int:
 
         # Send notifications
         success_count = 0
+        failure_count = 0
+        total_notifications = len(notifications)
+
         for notification in notifications:
             notifier = RelationshipAnnounceNotifier(
                 document_id,
@@ -239,8 +242,20 @@ def send_notifications_to_sh(document_id: str, notifications=None) -> int:
                 token=config['token']
             )
             response = notifier.send()
-            if response:
+            if response and 200 <= response.status_code < 300:
                 success_count += 1
+                logger.debug(f"Successfully sent SWH notification for software: {notification['softwareName']}")
+            else:
+                failure_count += 1
+                if response:
+                    logger.error(
+                        f"Failed to send SWH notification for software {notification['softwareName']}: HTTP {response.status_code}")
+                else:
+                    logger.error(
+                        f"Failed to send SWH notification for software {notification['softwareName']}: No response")
+
+        logger.info(
+            f"HAL notifications for {document_id}: {success_count} successful, {failure_count} failed (total: {total_notifications})")
 
         logger.info(f"Successfully sent {success_count} Software Heritage notifications for {document_id}")
         return success_count
@@ -279,6 +294,9 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> int:
 
         # Send notifications
         success_count = 0
+        failure_count = 0
+        total_notifications = len(notifications)
+
         for notification in notifications:
             notifier = ActionReviewNotifier(
                 document_id,
@@ -294,10 +312,17 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> int:
                 token=config['token']
             )
             response = notifier.send()
-            if response:
+            if response and 200 <= response.status_code < 300:
                 success_count += 1
+                logger.debug(f"Successfully sent HAL notification for software: {notification['softwareName']}")
+            else:
+                failure_count += 1
+                if response:
+                    logger.error(f"Failed to send HAL notification for software {notification['softwareName']}: HTTP {response.status_code}")
+                else:
+                    logger.error(f"Failed to send HAL notification for software {notification['softwareName']}: No response")
 
-        logger.info(f"Successfully sent {success_count} notifications for {ProviderType.HAL.value}:{document_id}")
+        logger.info(f"HAL notifications for {document_id}: {success_count} successful, {failure_count} failed (total: {total_notifications})")
         return success_count
 
     except Exception as e:
