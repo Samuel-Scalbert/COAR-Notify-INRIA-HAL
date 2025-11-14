@@ -284,9 +284,6 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> Dict[str,
             return {'success_count': 0, 'failure_count': 0, 'total_count': 0}
 
         config = get_notification_config_for_provider(ProviderType.HAL)
-        if not config.get('token'):
-            logger.error("HAL token not configured")
-            return {'success_count': 0, 'failure_count': len(notifications), 'total_count': len(notifications)}
 
         success_count = 0
         failure_count = 0
