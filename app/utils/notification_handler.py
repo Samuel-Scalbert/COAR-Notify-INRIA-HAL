@@ -166,21 +166,27 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
     config = {}
 
     if provider == ProviderType.HAL:
+        hal_token = os.getenv('HAL_TOKEN')
+        logger.debug(f"HAL_TOKEN from environment: {'set' if hal_token else 'NOT SET'}")
         config.update({
             'base_url': os.getenv('HAL_BASE_URL', 'https://inria.hal.science'),
             'inbox_url': os.getenv('HAL_INBOX_URL', 'https://inbox-preprod.archives-ouvertes.fr/'),
-            'token': os.getenv('HAL_TOKEN'),
+            'token': hal_token,
         })
     elif provider == ProviderType.SOFTWARE_HERITAGE:
+        swh_token = os.getenv('SWH_TOKEN')
+        logger.debug(f"SWH_TOKEN from environment: {'set' if swh_token else 'NOT SET'}")
         config.update({
             'base_url': os.getenv('SWH_BASE_URL', 'https://archive.softwareheritage.org'),
             'inbox_url': os.getenv('SWH_INBOX_URL', 'https://inbox.staging.swh.network/'),
-            'token': os.getenv('SWH_TOKEN'),
+            'token': swh_token,
         })
     elif provider == ProviderType.SW_VIZ:
+        sw_viz_token = os.getenv('SW_VIZ_TOKEN')
+        logger.debug(f"SW_VIZ_TOKEN from environment: {'set' if sw_viz_token else 'NOT SET'}")
         config.update({
             'base_url': os.getenv('SW_VIZ_URL', 'http://coar-viz:8080'),
-            'token': os.getenv('SWH_TOKEN'),
+            'token': sw_viz_token,
         })
 
     return config
