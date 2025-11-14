@@ -139,6 +139,7 @@ see [Database Schema Documentation](docs/database.md).
 | **Document Management**  |
 | GET                      | `/api/documents/status`                | No            | Documents collection status              |
 | GET                      | `/api/documents/<id>`                  | No            | Get document by ID                       |
+| DELETE                   | `/api/documents/<id>`                  | Yes           | Delete document and all software mentions|
 | GET                      | `/api/documents/<id>/software`         | No            | All software for document                |
 | GET                      | `/api/documents/<id>/software/<id_sw>` | No            | Specific software for document           |
 | POST                     | `/api/document`                        | Yes           | Insert document (triggers notifications) |
@@ -208,6 +209,37 @@ curl -s -H "x-api-key: $API_KEY" http://localhost:5000/status | jq
     - Returns document metadata by HAL identifier
     - Returns 404 if not found
 
+#### Delete Document
+
+- **DELETE `/api/documents/<id>`**
+    - Headers: `x-api-key`
+    - Deletes a document and ALL its associated software mentions
+    - Performs atomic deletion: edges → software → document
+    - Returns JSON response with deletion statistics
+    - Returns 404 if document not found
+    - Returns 500 if deletion fails
+
+Response examples:
+
+```json
+# Success (200)
+{
+  "status": "deleted",
+  "document_id": "hal-01478788",
+  "software_deleted": 5
+}
+
+# Document not found (404)
+{
+  "error": "Document not found"
+}
+
+# Deletion failed (500)
+{
+  "error": "Failed to delete document"
+}
+```
+
 #### Get Document Software (All)
 
 - **GET `/api/documents/<id_document>/software`**
@@ -236,6 +268,11 @@ curl -s http://localhost:5000/api/documents/status | jq
 
 # Get specific document
 curl -s http://localhost:5000/api/documents/hal-01478788 | jq
+
+# Delete document and all software mentions (requires API key)
+curl -s -X DELETE \
+  -H "x-api-key: $API_KEY" \
+  http://localhost:5000/api/documents/hal-01478788 | jq
 
 # Get all software for a document
 curl -s http://localhost:5000/api/documents/hal-01478788/software | jq

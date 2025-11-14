@@ -36,6 +36,42 @@ def document_from_id(id):
         logger.error(f"Failed to get document {id}: {e}")
         return jsonify({"error": "Failed to retrieve document"}), 500
 
+@app.route('/api/documents/<id>', methods=['DELETE'])
+@require_api_key
+def delete_document(id):
+    """
+    Delete a document and all its associated software mentions.
+
+    Args:
+        id: HAL document identifier (file_hal_id)
+
+    Returns:
+        JSON response with deletion status
+    """
+    try:
+        db_manager = get_db()
+
+        # First check if document exists
+        doc = db_manager.get_document_by_id(id)
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+
+        # Delete the document using the database manager method
+        deletion_result = db_manager.delete_document_by_id(id)
+
+        if deletion_result:
+            return jsonify({
+                "status": "deleted",
+                "document_id": id,
+                "software_deleted": deletion_result.get("software_deleted", 0)
+            })
+        else:
+            return jsonify({"error": "Failed to delete document"}), 500
+
+    except Exception as e:
+        logger.error(f"Failed to delete document {id}: {e}")
+        return jsonify({"error": "Failed to delete document"}), 500
+
 @app.route('/api/documents/<id_document>/software', methods=['GET'])
 def document_software_all_from_id(id_document):
     try:

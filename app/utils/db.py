@@ -468,6 +468,71 @@ class DatabaseManager:
             logger.debug(f"Document not found: documents/{id}")
         return None
 
+    def delete_document_by_id(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Delete a document and all its associated software mentions by file_hal_id.
+
+        Args:
+            document_id: HAL document identifier (file_hal_id)
+
+        Returns:
+            Dict with deletion results or None if failed
+        """
+        try:
+            query = """
+                LET doc = (
+                    FOR d IN documents
+                        FILTER d.file_hal_id == @document_id
+                        RETURN d
+                )
+
+                LET software_to_delete = (
+                    FOR d IN documents
+                        FILTER d.file_hal_id == @document_id
+                        FOR edge IN edge_doc_to_software
+                            FILTER edge._from == d._id
+                            RETURN DOCUMENT(edge._to)
+                )
+
+                LET delete_edges = (
+                    FOR edge IN edge_doc_to_software
+                        FILTER edge._from IN DOCUMENT(doc)._id
+                        REMOVE edge IN edge_doc_to_software
+                )
+
+                LET delete_software = (
+                    FOR software IN software_to_delete
+                        REMOVE software IN software
+                )
+
+                LET delete_doc = (
+                    FOR d IN documents
+                        FILTER d.file_hal_id == @document_id
+                        REMOVE d IN documents
+                )
+
+                RETURN {
+                    deleted: true,
+                    document_id: @document_id,
+                    software_deleted: COUNT(software_to_delete)
+                }
+            """
+
+            result = self.execute_aql_query(query, bind_vars={'document_id': document_id}, raw_results=True)
+            deletion_result = list(result)
+
+            if deletion_result:
+                software_count = deletion_result[0].get("software_deleted", 0)
+                logger.info(f"Successfully deleted document {document_id} and {software_count} software entries")
+                return deletion_result[0]
+            else:
+                logger.warning(f"No document found to delete with ID: {document_id}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to delete document {document_id}: {e}")
+            return None
+
     def get_software_by_normalized_name(self, name: str) -> List[Dict[str, Any]]:
         """
         Get software documents by normalized name.
