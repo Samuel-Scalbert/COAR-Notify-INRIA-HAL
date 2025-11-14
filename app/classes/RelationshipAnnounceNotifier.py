@@ -19,16 +19,15 @@ class RelationshipAnnounceNotifier:
     target_inbox: str
 
     def __init__(
-        self,
-        document_id,
-        actor_id,
-        actor_name,
-        origin_inbox,
-        software_name,
-        software_repo,
-        target_id,
-        target_inbox,
-        token=None,
+            self,
+            document_id,
+            actor_id,
+            actor_name,
+            origin_inbox,
+            software_name,
+            target_id,
+            target_inbox,
+            token=None,
     ):
         self.target_inbox = target_inbox
         self.token = token
@@ -38,16 +37,16 @@ class RelationshipAnnounceNotifier:
 
         payload = {
             "@context": [
-                    "https://www.w3.org/ns/activitystreams",
-                    "https://purl.org/coar/notify"
+                "https://www.w3.org/ns/activitystreams",
+                "https://purl.org/coar/notify"
             ],
             "actor": {
                 "id": actor_id,
-                "type": "Service",
+                "type": "Organization",
                 "name": actor_name,
             },
             "context": {
-                "id": document_id,
+                "id": f"{actor_id}/document/{document_id}",
                 "sorg:name": None,
                 "sorg:author": {
                     "@type": "Person",
@@ -56,7 +55,7 @@ class RelationshipAnnounceNotifier:
                 },
                 "ietf:cite-as": "https://doi.org/XXX/YYY",
                 "ietf:item": {
-                    "id": document_id,
+                    "id": f"https://hal.science/{document_id}/document",
                     "mediaType": "application/pdf",
                     "type": [
                         "Object",
@@ -70,10 +69,9 @@ class RelationshipAnnounceNotifier:
             },
             "id": notification_id,
             "object": {
-                "as:subject": document_id,
+                "as:subject": f"{actor_id}/document/{document_id}",
                 "as:relationship": "https://w3id.org/codemeta/3.0#citation",
-                "as:object": software_repo,
-                "as:name": software_name,
+                "as:object": software_name,
                 "id": uuid.uuid4().urn,
                 "type": "Relationship",
             },

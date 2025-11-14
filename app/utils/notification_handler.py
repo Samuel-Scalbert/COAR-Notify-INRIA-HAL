@@ -229,12 +229,11 @@ def send_notifications_to_swh(document_id: str, notifications=None) -> Dict[str,
             try:
                 notifier = RelationshipAnnounceNotifier(
                     document_id,
-                    "https://datalake.inria.fr",
+                    "https://prod-datadcis-api.inria.fr/coar",
                     "Inria DataLake",
                     "https://prod-datadcis-api.inria.fr/coar/inbox",
                     software_name,
-                    None,
-                    target_id=config['base_url'],
+                    target_id="https://www.softwareheritage.org",
                     target_inbox=config['inbox_url'],
                     token=config['token']
                 )
