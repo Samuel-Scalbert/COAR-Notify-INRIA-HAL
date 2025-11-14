@@ -101,7 +101,7 @@ class RelationshipAnnounceNotifier:
 
         # Add Authorization header if token is provided
         if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+            headers["Authorization"] = f"Token {self.token}"
 
         payload = self.notification.to_jsonld()
 
