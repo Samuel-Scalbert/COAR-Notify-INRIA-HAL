@@ -1,11 +1,21 @@
 import json
 import os
+import logging
 from flask import Flask, render_template, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from app.utils.db import init_db, get_db
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # This outputs to stdout/stderr which Docker captures
+    ]
+)
 
 with open("config.json") as f:
     config = json.load(f)

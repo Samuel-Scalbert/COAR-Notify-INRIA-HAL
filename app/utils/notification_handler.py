@@ -326,10 +326,10 @@ def send_validation_to_viz(document_id: str, software_name: str, accepted: bool 
             timeout=5
         )
         response.raise_for_status()
-        print(f"✅ Successfully sent {endpoint} notification to {url}")
+        logger.info(f"Successfully sent {endpoint} notification to {url}")
         return response
     except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to send notification: {e}")
+        logger.error(f"Failed to send notification: {e}")
         return False
     except Exception as e:
         logger.error(f"Error sending validation to Software Viz: {e}")

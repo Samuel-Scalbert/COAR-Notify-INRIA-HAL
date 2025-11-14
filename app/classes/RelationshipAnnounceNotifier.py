@@ -1,5 +1,8 @@
 import requests
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RelationshipAnnounceSoftware:
@@ -114,14 +117,14 @@ class RelationshipAnnounceNotifier:
             resp.raise_for_status()
             return resp
         except requests.exceptions.Timeout:
-            print(f"Timeout while sending notification to {url}")
+            logger.error(f"Timeout while sending notification to {url}")
             return None
         except requests.exceptions.ConnectionError as e:
-            print(f"Connection error while sending to {url}: {e}")
+            logger.error(f"Connection error while sending to {url}: {e}")
             return None
         except requests.HTTPError:
-            print(f"HTTP error: {resp.status_code} - {resp.text}")
+            logger.error(f"HTTP error: {resp.status_code} - {resp.text}")
             return None
         except Exception as e:
-            print(f"Unexpected error while sending notification to {url}: {e}")
+            logger.error(f"Unexpected error while sending notification to {url}: {e}")
             return None

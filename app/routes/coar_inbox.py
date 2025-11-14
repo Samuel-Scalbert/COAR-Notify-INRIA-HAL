@@ -1,9 +1,12 @@
+import logging
 from flask import request, jsonify, render_template
 
 from app.app import app
 from app.auth import require_api_key
 from app.utils.notification_handler import accept_notification, reject_notification, \
     send_validation_to_viz
+
+logger = logging.getLogger(__name__)
 
 received_notifications = []
 
@@ -15,7 +18,7 @@ def receive_notification():
     Receives a JSON-LD notification and validates it.
     """
     notification = request.get_json(force=True)
-    print("Received notification:", notification)  # For debugging
+    logger.info(f"Received COAR notification: {notification.get('type', 'unknown type')}")
 
     # Store the notification for display
     received_notifications.append(notification)
