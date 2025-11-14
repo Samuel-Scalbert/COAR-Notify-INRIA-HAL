@@ -105,10 +105,8 @@ class RelationshipAnnounceNotifier:
 
         payload = self.notification.to_jsonld()
 
-        # Add debugging information
-        # print(f"Sending notification to: {url}")
-        # print(f"Headers: {headers}")
-        # print(f"Payload: {payload}")
+        logger.debug(f"Sending notification to: {url}")
+        logger.debug(f"Payload: {payload}")
 
         # Add timeout to prevent hanging
         resp = None

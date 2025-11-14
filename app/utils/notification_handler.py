@@ -197,7 +197,7 @@ def get_notification_config_for_provider(provider: ProviderType) -> Dict[str, st
     return config
 
 
-def send_notifications_to_sh(document_id: str, notifications=None) -> int:
+def send_notifications_to_swh(document_id: str, notifications=None) -> Dict[str, Any]:
     """
     Send COAR notifications specifically to Software Heritage for software mentions.
 
@@ -206,128 +206,129 @@ def send_notifications_to_sh(document_id: str, notifications=None) -> int:
         notifications: List of notification data for software mentions in the document
 
     Returns:
-        int: Number of notifications successfully sent
+        Dict: {'success_count': int, 'failure_count': int, 'total_count': int}
     """
     try:
         if not document_id:
             logger.error("Invalid document ID provided")
-            return 0
+            return {'success_count': 0, 'failure_count': 0, 'total_count': 0}
 
         logger.info(f"Processing Software Heritage notifications for document: {document_id}")
 
-        # Get notification data using the document ID (works for any provider)
         if not notifications:
-            logger.warning(f"No software retrieved for {document_id}. "
-                           f"No notifications will be sent.")
-            return 0
+            logger.warning(f"No software retrieved for {document_id}. No notifications will be sent.")
+            return {'success_count': 0, 'failure_count': 0, 'total_count': 0}
 
-        # Get Software Heritage specific configuration
         config = get_notification_config_for_provider(ProviderType.SOFTWARE_HERITAGE)
 
-        # Send notifications
         success_count = 0
         failure_count = 0
-        total_notifications = len(notifications)
 
         for notification in notifications:
-            notifier = RelationshipAnnounceNotifier(
-                document_id,
-                "https://datalake.inria.fr",
-                "Inria DataLake",
-                "https://prod-datadcis-api.inria.fr/coar/inbox",
-                notification['softwareName'],
-                None,
-                target_id=config['base_url'],
-                target_inbox=config['inbox_url'],
-                token=config['token']
-            )
-            response = notifier.send()
-            if response and 200 <= response.status_code < 300:
-                success_count += 1
-                logger.debug(f"Successfully sent SWH notification for software: {notification['softwareName']}")
-            else:
-                failure_count += 1
-                if response:
-                    logger.error(
-                        f"Failed to send SWH notification for software {notification['softwareName']}: HTTP {response.status_code}")
+            software_name = notification.get('softwareName')
+            try:
+                notifier = RelationshipAnnounceNotifier(
+                    document_id,
+                    "https://datalake.inria.fr",
+                    "Inria DataLake",
+                    "https://prod-datadcis-api.inria.fr/coar/inbox",
+                    software_name,
+                    None,
+                    target_id=config['base_url'],
+                    target_inbox=config['inbox_url'],
+                    token=config['token']
+                )
+                response = notifier.send()
+
+                if response and 200 <= response.status_code < 300:
+                    success_count += 1
+                    logger.debug(f"Successfully sent SWH notification for software: {software_name}")
                 else:
-                    logger.error(
-                        f"Failed to send SWH notification for software {notification['softwareName']}: No response")
+                    failure_count += 1
+                    status = response.status_code if response else "No response"
+                    logger.error(f"Failed to send SWH notification for software {software_name}: HTTP {status}")
 
-        logger.info(
-            f"HAL notifications for {document_id}: {success_count} successful, {failure_count} failed (total: {total_notifications})")
+            except Exception as e:
+                failure_count += 1
+                logger.error(f"Exception processing SWH notification for software {software_name}: {e}")
 
-        logger.info(f"Successfully sent {success_count} Software Heritage notifications for {document_id}")
-        return success_count
+        total_count = len(notifications)
+        logger.info(f"SWH notifications for {document_id}: {success_count} successful, {failure_count} failed (total: {total_count})")
+
+        return {'success_count': success_count, 'failure_count': failure_count, 'total_count': total_count}
 
     except Exception as e:
         logger.error(f"Failed to process Software Heritage notifications for {document_id}: {e}")
-        return 0
+        return {'success_count': 0, 'failure_count': len(notifications) if notifications else 0, 'total_count': len(notifications) if notifications else 0}
 
 
-def send_notifications_to_hal(document_id: str, notifications=None) -> int:
+def send_notifications_to_hal(document_id: str, notifications=None) -> Dict[str, Any]:
     """
-    Send COAR notifications to appropriate providers for software mentions in a document.
+    Send COAR notifications to HAL for software mentions in a document.
 
     Args:
         document_id: document identifier
         notifications: List of notification data for software mentions in the document
 
     Returns:
-        int: Number of notifications successfully sent
+        Dict: {'success_count': int, 'failure_count': int, 'total_count': int}
     """
     try:
         if not document_id:
             logger.error("Invalid document ID provided")
-            return 0
+            return {'success_count': 0, 'failure_count': 0, 'total_count': 0}
 
         logger.info(f"Processing notifications for HAL for document: {document_id}")
 
-        # Get notification data using the document ID (works for any provider)
         if not notifications:
-            logger.warning(f"No software retrieved for {document_id}. "
-                           f"No notifications will be sent.")
-            return 0
+            logger.warning(f"No software retrieved for {document_id}. No notifications will be sent.")
+            return {'success_count': 0, 'failure_count': 0, 'total_count': 0}
 
-        # Get provider-specific configuration
         config = get_notification_config_for_provider(ProviderType.HAL)
+        if not config.get('token'):
+            logger.error("HAL token not configured")
+            return {'success_count': 0, 'failure_count': len(notifications), 'total_count': len(notifications)}
 
-        # Send notifications
         success_count = 0
         failure_count = 0
-        total_notifications = len(notifications)
 
         for notification in notifications:
-            notifier = ActionReviewNotifier(
-                document_id,
-                actor_id="https://datalake.inria.fr",
-                actor_name="Inria DataLake",
-                origin_inbox="https://prod-datadcis-api.inria.fr/coar/inbox",
-                software_name=notification['softwareName'],
-                software_repo=None,
-                mention_type="software",
-                mention_context=notification['contexts'],
-                target_id=config['base_url'],  # target_id
-                target_inbox=config['inbox_url'],  # target_inbox
-                token=config['token']
-            )
-            response = notifier.send()
-            if response and 200 <= response.status_code < 300:
-                success_count += 1
-                logger.debug(f"Successfully sent HAL notification for software: {notification['softwareName']}")
-            else:
-                failure_count += 1
-                if response:
-                    logger.error(f"Failed to send HAL notification for software {notification['softwareName']}: HTTP {response.status_code}")
+            software_name = notification.get('softwareName', 'Unknown software')
+            try:
+                notifier = ActionReviewNotifier(
+                    document_id,
+                    actor_id="https://datalake.inria.fr",
+                    actor_name="Inria DataLake",
+                    origin_inbox="https://prod-datadcis-api.inria.fr/coar/inbox",
+                    software_name=software_name,
+                    software_repo=None,
+                    mention_type="software",
+                    mention_context=notification.get('contexts', []),
+                    target_id=config['base_url'],
+                    target_inbox=config['inbox_url'],
+                    token=config['token']
+                )
+                response = notifier.send()
+                if response and 200 <= response.status_code < 300:
+                    success_count += 1
+                    logger.debug(f"Successfully sent HAL notification for software: {software_name}")
                 else:
-                    logger.error(f"Failed to send HAL notification for software {notification['softwareName']}: No response")
+                    failure_count += 1
+                    status = response.status_code if response else "No response"
+                    logger.error(f"Failed to send HAL notification for software {software_name}: HTTP {status}")
 
-        logger.info(f"HAL notifications for {document_id}: {success_count} successful, {failure_count} failed (total: {total_notifications})")
-        return success_count
+            except Exception as e:
+                failure_count += 1
+                logger.error(f"Exception processing HAL notification for software {software_name}: {e}")
+
+        total_count = len(notifications)
+        logger.info(f"HAL notifications for {document_id}: {success_count} successful, {failure_count} failed (total: {total_count})")
+
+        return {'success_count': success_count, 'failure_count': failure_count, 'total_count': total_count}
 
     except Exception as e:
         logger.error(f"Failed to process notifications for document_id {document_id}: {e}")
-        return 0
+        return {'success_count': 0, 'failure_count': len(notifications) if notifications else 0, 'total_count': len(notifications) if notifications else 0}
 
 
 def send_validation_to_viz(document_id: str, software_name: str, accepted: bool = True):

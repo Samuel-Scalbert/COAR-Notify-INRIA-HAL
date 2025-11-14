@@ -88,15 +88,13 @@ class ActionReviewNotifier:
 
         payload = self.notification.to_jsonld()
 
-        # Add debugging information
-        # print(f"Sending notification to: {url}")
-        # print(f"Headers: {headers}")
-        # print(f"Payload: {payload}")
+        logger.debug(f"Sending notification to: {url}")
+        logger.debug(f"Payload: {payload}")
 
         # Add timeout to prevent hanging
         resp = None
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=10)
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
             resp.raise_for_status()
             return resp
         except requests.exceptions.Timeout:
