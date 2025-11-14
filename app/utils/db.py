@@ -442,24 +442,29 @@ class DatabaseManager:
             logger.error(f"Failed to get collection count for {collection_name}: {e}")
             return 0
 
-    def get_document_by_key(self, collection_name: str, key: str) -> Optional[Dict[str, Any]]:
+    def get_document_by_id(self, id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a document by its key.
+        Get a document by id
 
         Args:
-            collection_name: Name of the collection
-            key: Document key
+            id: Document id
 
         Returns:
             Document data or None if not found
         """
         try:
-            collection = self.get_collection(collection_name)
-            if collection:
-                doc = collection.fetchDocument(key)
-                return doc.getStore()
+            query = """
+                        FOR doc IN documents
+                            FILTER doc.file_hal_id == @id
+                            RETURN doc
+                    """
+            result = self.execute_aql_query(query, bind_vars={'id': id}, raw_results=True)
+            docs = list(result)
+            if docs:
+                return docs[0]
+
         except Exception as e:
-            logger.debug(f"Document not found: {collection_name}/{key}")
+            logger.debug(f"Document not found: documents/{id}")
         return None
 
     def get_software_by_normalized_name(self, name: str) -> List[Dict[str, Any]]:

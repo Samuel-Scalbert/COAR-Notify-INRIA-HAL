@@ -27,7 +27,7 @@ def documents_status():
 def document_from_id(id):
     try:
         db_manager = get_db()
-        doc = db_manager.get_document_by_key("documents", id)
+        doc = db_manager.get_document_by_id(id)
         if doc:
             return jsonify(doc)
         else:
