@@ -46,7 +46,7 @@ class RelationshipAnnounceNotifier:
                 "name": actor_name,
             },
             "context": {
-                "id": f"{actor_id}/document/{document_id}",
+                "id": f"https://hal.science/{document_id}",
                 "sorg:name": None,
                 "sorg:author": {
                     "@type": "Person",
@@ -69,9 +69,9 @@ class RelationshipAnnounceNotifier:
             },
             "id": notification_id,
             "object": {
-                "as:subject": f"{actor_id}/document/{document_id}",
+                "as:object": f"https://hal.science/{document_id}",
                 "as:relationship": "https://w3id.org/codemeta/3.0#citation",
-                "as:object": software_name,
+                "as:subject": software_name,
                 "id": uuid.uuid4().urn,
                 "type": "Relationship",
             },
