@@ -28,9 +28,16 @@ def receive_notification():
     else:
         notification_type = notification_types
 
-    if notification_type in ("Accept", "Reject"):
-        logger.info(notification)
+    notification_origin = notification.get("origin", None)
+    if notification_origin and notification_origin["id"] == "https://www.softwareheritage.org/":
+        logger.info("Notification originated from Software Heritage is ignored.")
+        return jsonify({
+            "status": "ok",
+            "type": getattr(notification, "type", None),
+            "actor": getattr(notification['actor'], "id", None)
+        }), 202
 
+    if notification_type in ("Accept", "Reject"):
         hal_id_full = notification['object']['object']['id']
         hal_id = hal_id_full.replace('oai:HAL:', '')
         software_name = notification['object']['object']['sorg:citation']['name']
