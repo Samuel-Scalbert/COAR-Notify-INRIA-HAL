@@ -17,12 +17,17 @@ def receive_notification():
     Receives a JSON-LD notification and validates it.
     """
     notification = request.get_json(force=True)
-    logger.info(f"Received COAR notification: {notification.get('type', 'unknown type')}")
+    notification_types = notification.get('type', [])
+    logger.info(f"Received COAR notification: {notification_types}")
 
     # Store the notification for display
     received_notifications.append(notification)
 
-    notification_type = getattr(notification, "type", None)
+    if type(notification_types) is list:
+        notification_type = notification_types[0]
+    else:
+        notification_type = notification_types
+
     if notification_type in ("Accept", "Reject"):
         notification_json = notification.to_jsonld()
 
