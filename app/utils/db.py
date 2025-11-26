@@ -1,122 +1,654 @@
 import json
 import csv
+import logging
+import requests
+from typing import Dict, Any, List, Optional, Union
 from pyArango.connection import Connection
 from pyArango.theExceptions import CreationError
+from pyArango.database import Database
+from pyArango.collection import Collection
+from werkzeug.datastructures import FileStorage
+from flask import current_app
+
+logger = logging.getLogger(__name__)
+
+# Global database manager instance
+db_manager: Union['DatabaseManager', None] = None
 
 
-def check_or_create_collection(db, collection_name, collection_type='Collection'):
-    """Return collection if exists, else create it safely under concurrency."""
-    if db.hasCollection(collection_name):
+class DatabaseManager:
+    """
+    Centralized database management class for ArangoDB operations.
+
+    This class handles all database connections, collections, and queries in one place,
+    providing a clean interface for database operations throughout the application.
+    """
+
+    def __init__(self, host: str, port: int, username: str, password: str, db_name: str):
+        """
+        Initialize the DatabaseManager.
+
+        Args:
+            host: ArangoDB host
+            port: ArangoDB port
+            username: Database username
+            password: Database password
+            db_name: Database name
+        """
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.db_name = db_name
+        self._connection: Optional[Connection] = None
+        self._database: Optional[Database] = None
+
+    def connect(self) -> Connection:
+        """
+        Establish connection to ArangoDB.
+
+        Returns:
+            Connection: The ArangoDB connection object
+
+        Raises:
+            ConnectionError: If connection fails
+        """
+        if self._connection is None:
+            try:
+                self._connection = Connection(
+                    arangoURL=f"http://{self.host}:{self.port}",
+                    username=self.username,
+                    password=self.password
+                )
+                logger.info(f"Connected to ArangoDB at {self.host}:{self.port}")
+            except Exception as e:
+                logger.error(f"Failed to connect to ArangoDB: {e}")
+                raise ConnectionError(f"ArangoDB connection failed: {e}")
+
+        return self._connection
+
+    def get_database(self) -> Database:
+        """
+        Get the database instance, creating it if necessary.
+
+        Returns:
+            Database: The ArangoDB database object
+
+        Raises:
+            Exception: If database cannot be accessed
+        """
+        if self._database is None:
+            conn = self.connect()
+
+            # Handle race conditions across multiple workers
+            try:
+                if not conn.hasDatabase(self.db_name):
+                    try:
+                        conn.createDatabase(name=self.db_name)
+                        logger.info(f"Created database: {self.db_name}")
+                    except CreationError:
+                        # If another worker just created it, it will exist now
+                        if not conn.hasDatabase(self.db_name):
+                            raise Exception(f"Failed to create database: {self.db_name}")
+            except Exception as e:
+                logger.warning(f"Database access issue: {e}")
+                # Try to proceed if we can access the DB
+                if not conn.hasDatabase(self.db_name):
+                    raise Exception(f"Cannot access database: {self.db_name}")
+
+            self._database = conn[self.db_name]
+            logger.info(f"Using database: {self.db_name}")
+
+        return self._database
+
+    def get_connection_info(self) -> Dict[str, Any]:
+        """
+        Get connection and database information.
+
+        Returns:
+            Dict containing connection status and details
+        """
+        info = {
+            "host": self.host,
+            "port": self.port,
+            "db": self.db_name,
+            "user": self.username,
+            "status": "down",
+            "version": None,
+            "collections": "unknown"
+        }
+
+        try:
+            conn = self.connect()
+            info["status"] = "up"
+
+            # Get version info
+            try:
+                version_info = conn.getVersion() or {}
+                info["version"] = version_info.get("version") or version_info.get("server")
+            except Exception:
+                pass
+
+            # Get collection count
+            try:
+                db = self.get_database()
+                coll_info = db.fetchCollections()
+                if isinstance(coll_info, dict) and "result" in coll_info:
+                    info["collections"] = len(coll_info["result"])
+            except Exception:
+                pass
+
+        except Exception as e:
+            info["error"] = str(e)
+            logger.error(f"Failed to get connection info: {e}")
+
+        return info
+
+    def check_or_create_collection(self, collection_name: str, collection_type: str = 'Collection') -> Collection:
+        """
+        Get collection if exists, else create it safely under concurrency.
+
+        Args:
+            collection_name: Name of the collection
+            collection_type: Type of collection ('Collection' or 'Edges')
+
+        Returns:
+            Collection: The collection object
+        """
+        db = self.get_database()
+
+        if db.hasCollection(collection_name):
+            return db[collection_name]
+
+        try:
+            db.createCollection(collection_type, name=collection_name)
+            logger.info(f"Created collection: {collection_name}")
+        except CreationError:
+            # Likely created concurrently by another worker
+            logger.info(f"Collection {collection_name} already exists (created by another worker)")
+
         return db[collection_name]
-    try:
-        db.createCollection(collection_type, name=collection_name)
-    except CreationError:
-        # Likely created concurrently by another worker; proceed to return it
-        pass
-    return db[collection_name]
 
+    def get_collection(self, collection_name: str) -> Optional[Collection]:
+        """
+        Get a collection by name.
 
-def load_blacklist(csv_path):
-    """Load blacklist terms from CSV (first column)."""
-    blacklist = []
-    with open(csv_path, newline="", encoding="utf-8") as csvfile:
-        reader = csv.reader(csvfile)
-        next(reader, None)  # skip header if exists
-        for row in reader:
-            if row and row[0]:
-                blacklist.append(row[0].strip())
-    return set(blacklist)
+        Args:
+            collection_name: Name of the collection
 
+        Returns:
+            Collection object or None if not found
+        """
+        try:
+            db = self.get_database()
+            if db.hasCollection(collection_name):
+                return db[collection_name]
+        except Exception as e:
+            logger.error(f"Failed to get collection {collection_name}: {e}")
+        return None
 
-def remove_duplicates(lst):
-    """Remove duplicate JSON objects by hashing."""
-    seen = set()
-    unique = []
-    for item in lst:
-        key = json.dumps(item, sort_keys=True)
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-    return unique
+    def execute_aql_query(self, query: str, bind_vars: Optional[Dict[str, Any]] = None,
+                          raw_results: bool = False) -> Any:
+        """
+        Execute an AQL query.
 
+        Args:
+            query: AQL query string
+            bind_vars: Bind variables for the query
+            raw_results: Whether to return raw results
 
-def insert_json_file(file_json, db, blacklist_csv="./app/static/data/blacklist.csv"):
-    """
-    Insert a single JSON file (as file object or dict) into ArangoDB,
-    but skip if the document already exists.
-    """
-    documents_collection = check_or_create_collection(db, "documents")
-    software_collection = check_or_create_collection(db, "software")
-    doc_soft_edge = check_or_create_collection(db, "edge_doc_to_software", "Edges")
-    blacklist = load_blacklist(blacklist_csv)
+        Returns:
+            Query results
 
-    # Read JSON if it's a file object
-    if hasattr(file_json, "read"):
-        data_json = json.load(file_json)
-        file_name = getattr(file_json, "filename", "unnamed").replace(".json", "").replace(".software", "")
-    else:  # dict directly
-        data_json = file_json
-        file_name = data_json.get("file_hal_id", "unnamed")
+        Raises:
+            Exception: If query execution fails
+        """
+        try:
+            db = self.get_database()
+            result = db.AQLQuery(query, bindVars=bind_vars or {}, rawResults=raw_results)
+            logger.debug(f"Executed AQL query: {query[:100]}...")
+            return result
+        except Exception as e:
+            logger.error(f"AQL query failed: {query[:100]}... Error: {e}")
+            raise
 
-    existing_files = db.AQLQuery(
-        "FOR d IN documents FILTER d.file_hal_id == @file_name RETURN d",
-        bindVars={"file_name": file_name},
-        rawResults=True
-    )
+    def load_blacklist(self, csv_path: str = "./app/static/data/blacklist.csv") -> set:
+        """
+        Load blacklist terms from CSV file.
 
-    if existing_files:
-        print(f"⚠️  File '{file_name}' already exists in DB. Skipping.")
-        return False
+        Args:
+            csv_path: Path to the blacklist CSV file
 
-    # Insert document
-    document_document = documents_collection.createDocument({"file_hal_id": file_name})
-    document_document.save()
+        Returns:
+            Set of blacklisted terms
+        """
+        blacklist = set()
+        try:
+            with open(csv_path, newline="", encoding="utf-8") as csvfile:
+                reader = csv.reader(csvfile)
+                next(reader, None)  # skip header if exists
+                for row in reader:
+                    if row and row[0]:
+                        blacklist.add(row[0].strip())
+            logger.debug(f"Loaded {len(blacklist)} terms from blacklist")
+        except Exception as e:
+            logger.warning(f"Failed to load blacklist from {csv_path}: {e}")
 
-    mentions = remove_duplicates(data_json.get("mentions", []))
-    for mention in mentions:
-        norm_name = mention["software-name"]["normalizedForm"]
-        if norm_name not in blacklist:
-            mention["software_name"] = mention.pop("software-name")
-            mention["software_type"] = mention.pop("software-type")
+        return blacklist
 
-            software_document = software_collection.createDocument(mention)
-            software_document.save()
+    def remove_duplicates(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Remove duplicate JSON objects by hashing.
 
-            # Create edge from document to software
-            edge_doc_soft = doc_soft_edge.createEdge()
-            edge_doc_soft['_from'] = document_document._id
-            edge_doc_soft['_to'] = software_document._id
-            edge_doc_soft.save()
+        Args:
+            items: List of dictionaries to deduplicate
 
-    return True
+        Returns:
+            List with duplicates removed
+        """
+        seen = set()
+        unique = []
+        for item in items:
+            key = json.dumps(item, sort_keys=True)
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
 
-    # Create e
+        logger.debug(f"Removed {len(items) - len(unique)} duplicates")
+        return unique
 
+    def document_exists(self, collection_name: str, key_field: str, key_value: str) -> bool:
+        """
+        Check if a document exists in a collection.
 
-db = None
+        Args:
+            collection_name: Name of the collection
+            key_field: Field name to check
+            key_value: Value to match
+
+        Returns:
+            True if document exists, False otherwise
+        """
+        try:
+            query = f"FOR d IN {collection_name} FILTER d.{key_field} == @value RETURN 1"
+            result = self.execute_aql_query(query, bind_vars={"value": key_value}, raw_results=True)
+            return len(list(result)) > 0
+        except Exception as e:
+            logger.error(f"Failed to check document existence: {e}")
+            return False
+
+    def insert_document_as_json(
+            self,
+            document_id: str,
+            file_json: Union[FileStorage, Dict[str, Any]],
+            blacklist_csv: str = "./app/static/data/blacklist.csv"
+    ) -> bool:
+        """
+        Insert a JSON file into ArangoDB with document, software, and edge collections.
+
+        Args:
+            document_id: Unique identifier for the document
+            file_json: File object or dictionary containing the data
+            blacklist_csv: Path to blacklist CSV file
+
+        Returns:
+            True if inserted, False if already exists or failed
+        """
+        try:
+            # Get collections
+            documents_collection = self.check_or_create_collection("documents")
+            software_collection = self.check_or_create_collection("software")
+            doc_soft_edge = self.check_or_create_collection("edge_doc_to_software", "Edges")
+
+            # Load blacklist
+            blacklist = self.load_blacklist(blacklist_csv)
+
+            # Process input
+            if hasattr(file_json, "read"):
+                data_json = json.load(file_json)
+            else:
+                data_json = file_json
+
+            # Check if document already exists
+            if self.document_exists("documents", "file_hal_id", document_id):
+                logger.warning(f"Document with ID '{document_id}' already exists in DB. Skipping.")
+                return False
+
+            # Insert main document
+            document_document = documents_collection.createDocument({"file_hal_id": document_id})
+            document_document.save()
+            logger.debug(f"Created document with ID: {document_id}")
+
+            # Process mentions
+            mentions = self.remove_duplicates(data_json.get("mentions", []))
+            inserted_count = 0
+
+            for mention in mentions:
+                norm_name = mention["software-name"]["normalizedForm"]
+                if norm_name not in blacklist:
+                    # Rename fields for consistency
+                    mention["software_name"] = mention.pop("software-name")
+                    mention["software_type"] = mention.pop("software-type")
+
+                    # Insert software document
+                    software_document = software_collection.createDocument(mention)
+                    software_document.save()
+
+                    # Create edge from document to software
+                    edge_doc_soft = doc_soft_edge.createEdge()
+                    edge_doc_soft['_from'] = document_document._id
+                    edge_doc_soft['_to'] = software_document._id
+                    edge_doc_soft.save()
+
+                    inserted_count += 1
+
+            logger.info(f"Inserted {inserted_count} software mentions for document with ID: {document_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to insert JSON file: {e}")
+            return False
+
+    def get_software_notifications(self, document_id: str) -> List[Dict[str, Any]]:
+        """
+        Get software notifications for a HAL document.
+
+        Args:
+            document_id: HAL document identifier
+
+        Returns:
+            List of notification data
+        """
+        try:
+            query = """
+                FOR doc IN documents
+                    FILTER doc.file_hal_id == @document_id
+                    FOR edge IN edge_doc_to_software
+                        FILTER edge._from == doc._id
+                        LET mention = DOCUMENT(edge._to)
+                        COLLECT softwareName = mention.software_name.normalizedForm INTO mentionsGroup
+                        RETURN {
+                            softwareName: softwareName,
+                            contexts: mentionsGroup[*].mention.context
+                        }
+            """
+
+            result = self.execute_aql_query(query, bind_vars={'document_id': document_id}, raw_results=True)
+            return list(result)
+
+        except Exception as e:
+            logger.error(f"Failed to get software notifications for {document_id}: {e}")
+            return []
+
+    def update_software_with_author_validation(self, document_id: str, software_name: str, accepted: bool) -> bool:
+        """
+        Update software verification status.
+
+        Args:
+            document_id: HAL identifier
+            software_name: Software name
+            accepted: Verification status
+
+        Returns:
+            True if update successful, False otherwise
+        """
+        try:
+            query = """
+                FOR doc IN documents
+                    FILTER doc.file_hal_id == @hal_id
+                    FOR edge_soft IN edge_doc_to_software
+                        FILTER edge_soft._from == doc._id
+                        LET software = DOCUMENT(edge_soft._to)
+                        FILTER software.software_name.normalizedForm == @software_name
+                        UPDATE software WITH { verification_by_author: @verification } IN software
+            """
+
+            bind_vars = {
+                'hal_id': document_id,
+                'software_name': software_name,
+                'verification': accepted
+            }
+
+            result = self.execute_aql_query(query, bind_vars=bind_vars, raw_results=True)
+            updated_count = len(list(result))
+
+            if updated_count > 0:
+                logger.info(f"Updated verification status for {updated_count} software entries "
+                            f"(HAL: {document_id}, Software: {software_name}, Status: {accepted})")
+            else:
+                logger.warning(f"No software entries found for HAL: {document_id}, Software: {software_name}")
+
+            return updated_count > 0
+
+        except Exception as e:
+            logger.error(f"Failed to update software verification: {e}")
+            return False
+
+    def get_collection_count(self, collection_name: str) -> int:
+        """
+        Get the count of documents in a collection.
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Document count
+        """
+        try:
+            collection = self.get_collection(collection_name)
+            if collection:
+                return collection.count()
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to get collection count for {collection_name}: {e}")
+            return 0
+
+    def get_document_by_id(self, id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a document by id with related softwares
+
+        Args:
+            id: Document id
+
+        Returns:
+            Document data with related softwares or None if not found
+        """
+        try:
+            query = """
+                FOR doc IN documents
+                    FILTER doc.file_hal_id == @id
+                    LET mentions = (
+                        FOR edge IN edge_doc_to_software
+                            FILTER edge._from == doc._id
+                            LET software = DOCUMENT(edge._to)
+                            RETURN software
+                    )
+                    RETURN {
+                        document: doc,
+                        mentions: mentions
+                    }
+            """
+            result = self.execute_aql_query(query, bind_vars={'id': id}, raw_results=True)
+            docs = list(result)
+            if docs:
+                return docs[0]
+
+        except Exception as e:
+            logger.debug(f"Document not found: documents/{id}")
+        return None
+
+    def delete_document_by_id(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Delete a document and all its associated software mentions by file_hal_id.
+
+        Args:
+            document_id: HAL document identifier (file_hal_id)
+
+        Returns:
+            Dict with deletion results or None if failed
+        """
+        try:
+            query = """
+                LET doc = (
+                    FOR d IN documents
+                        FILTER d.file_hal_id == @document_id
+                        RETURN d
+                )
+
+                LET software_to_delete = (
+                    FOR d IN documents
+                        FILTER d.file_hal_id == @document_id
+                        FOR edge IN edge_doc_to_software
+                            FILTER edge._from == d._id
+                            RETURN DOCUMENT(edge._to)
+                )
+
+                LET delete_edges = (
+                    FOR edge IN edge_doc_to_software
+                        FILTER edge._from IN DOCUMENT(doc)._id
+                        REMOVE edge IN edge_doc_to_software
+                )
+
+                LET delete_software = (
+                    FOR software IN software_to_delete
+                        REMOVE software IN software
+                )
+
+                LET delete_doc = (
+                    FOR d IN documents
+                        FILTER d.file_hal_id == @document_id
+                        REMOVE d IN documents
+                )
+
+                RETURN {
+                    deleted: true,
+                    document_id: @document_id,
+                    software_deleted: COUNT(software_to_delete)
+                }
+            """
+
+            result = self.execute_aql_query(query, bind_vars={'document_id': document_id}, raw_results=True)
+            deletion_result = list(result)
+
+            if deletion_result:
+                software_count = deletion_result[0].get("software_deleted", 0)
+                logger.info(f"Successfully deleted document {document_id} and {software_count} software entries")
+                return deletion_result[0]
+            else:
+                logger.warning(f"No document found to delete with ID: {document_id}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to delete document {document_id}: {e}")
+            return None
+
+    def get_software_by_normalized_name(self, name: str) -> List[Dict[str, Any]]:
+        """
+        Get software documents by normalized name.
+
+        Args:
+            name: Software name
+
+        Returns:
+            List of matching software documents
+        """
+        try:
+            query = """
+                FOR soft IN software
+                    FILTER soft.software_name.normalizedForm == @name
+                    RETURN soft
+            """
+
+            result = self.execute_aql_query(query, bind_vars={'name': name}, raw_results=True)
+            return list(result)
+
+        except Exception as e:
+            logger.error(f"Failed to get software by normalized name {name}: {e}")
+            return []
+
+    def get_document_software(self, id_document: str, id_software: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get software linked to a document.
+
+        Args:
+            id_document: Document ID
+            id_software: Optional software ID for filtering
+
+        Returns:
+            List of software documents
+        """
+        try:
+            if id_software:
+                query = """
+                    FOR doc IN documents
+                        FILTER doc.file_hal_id == @id_document
+                        FOR edge_soft IN edge_doc_to_software
+                            FILTER edge_soft._from == doc._id
+                            LET software = DOCUMENT(edge_soft._to)
+                            FILTER software._key == @software_id
+                            RETURN software
+                """
+                result = self.execute_aql_query(
+                    query,
+                    bind_vars={'id_document': id_document, 'software_id': id_software},
+                    raw_results=True
+                )
+            else:
+                query = """
+                    FOR doc IN documents
+                        FILTER doc.file_hal_id == @id_document
+                        FOR edge_soft IN edge_doc_to_software
+                            FILTER edge_soft._from == doc._id
+                            LET software = DOCUMENT(edge_soft._to)
+                            RETURN software
+                """
+                result = self.execute_aql_query(query, bind_vars={'id_document': id_document}, raw_results=True)
+
+            return list(result)
+
+        except Exception as e:
+            logger.error(f"Failed to get document software: {e}")
+            return []
 
 
 def init_db(app):
-    global db
-    conn = Connection(
-        arangoURL=f"http://{app.config['ARANGO_HOST']}:{app.config['ARANGO_PORT']}",
+    """
+    Initialize the database manager.
+
+    Args:
+        app: Flask application instance
+
+    Returns:
+        DatabaseManager: The initialized database manager
+    """
+    global db_manager
+
+    db_manager = DatabaseManager(
+        host=app.config['ARANGO_HOST'],
+        port=app.config['ARANGO_PORT'],
         username=app.config["ARANGO_USERNAME"],
-        password=app.config["ARANGO_PASSWORD"]
+        password=app.config["ARANGO_PASSWORD"],
+        db_name=app.config["ARANGO_DB"]
     )
 
-    db_name = app.config["ARANGO_DB"]
-    # Handle race conditions across multiple workers: create if missing, but ignore duplicate creation
-    try:
-        if not conn.hasDatabase(db_name):
-            try:
-                conn.createDatabase(name=db_name)
-            except CreationError:
-                # If another worker just created it, it will exist now. Re-check.
-                if not conn.hasDatabase(db_name):
-                    raise
-    except Exception:
-        # As an additional safeguard, if hasDatabase() itself fails momentarily, try to proceed if we can access the DB
-        pass
+    # Initialize the database (creates if needed)
+    db_manager.get_database()
 
-    db = conn[db_name]
-    return db
+    logger.info(f"Database manager initialized for {app.config['ARANGO_DB']}")
+    return db_manager
+
+
+def get_db() -> DatabaseManager:
+    """
+    Get the global database manager instance.
+
+    Returns:
+        DatabaseManager: The database manager instance
+
+    Raises:
+        RuntimeError: If database manager is not initialized
+    """
+    if db_manager is None:
+        raise RuntimeError("Database manager not initialized. Call init_db() first.")
+    return db_manager
+

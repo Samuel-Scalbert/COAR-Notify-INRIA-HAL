@@ -1,5 +1,8 @@
 import requests
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ActionReviewSoftware:
@@ -11,9 +14,6 @@ class ActionReviewSoftware:
 
 
 class ActionReviewNotifier:
-    actor_id = "https://datalake.inria.SAMUEL.fr"
-    actor_name = "Samuel Scalbert"
-    origin_inbox = "https://datalake.inria.fr/inbox"
 
     # Attribute annotations for static analyzers
     notification: ActionReviewSoftware
@@ -22,14 +22,19 @@ class ActionReviewNotifier:
     def __init__(
         self,
         document_id,
+        actor_id,
+        actor_name,
+        origin_inbox,
         software_name,
         software_repo,
         mention_type,
         mention_context,
         target_id,
         target_inbox,
+        token=None,
     ):
         self.target_inbox = target_inbox
+        self.token = token
 
         # Generate a random UUID (version 4) and convert to URN
         notification_id = uuid.uuid4().urn
@@ -42,14 +47,14 @@ class ActionReviewNotifier:
             "id": notification_id,
             "type": ['Offer', 'coar-notify:ReviewAction'],
             "actor": {
-                "id": self.actor_id,
+                "id": actor_id,
                 "type": "Service",
-                "name": self.actor_name,
+                "name": actor_name,
             },
             "origin": {
-                "id": self.actor_id,
+                "id": actor_id,
                 "type": "Service",
-                "inbox": self.origin_inbox,
+                "inbox": origin_inbox,
             },
             "target": {
                 "id": target_id,
@@ -76,12 +81,31 @@ class ActionReviewNotifier:
     def send(self):
         url = self.target_inbox
         headers = {"Content-Type": "application/ld+json"}
-        payload = self.notification.to_jsonld()  # already a dict
-        resp = requests.post(url, headers=headers, json=payload)
-        #print(payload)
+
+        # Add Authorization header if token is provided
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
+        payload = self.notification.to_jsonld()
+
+        logger.debug(f"Sending notification to: {url}")
+        logger.debug(f"Payload: {payload}")
+
+        # Add timeout to prevent hanging
+        resp = None
         try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
             resp.raise_for_status()
+            return resp
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout while sending notification to {url}")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error while sending to {url}: {e}")
+            return None
         except requests.HTTPError:
-            print("Status:", resp.status_code)
-            raise
-        return resp
+            logger.error(f"HTTP error: {resp.status_code} - {resp.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error while sending notification to {url}: {e}")
+            return None
