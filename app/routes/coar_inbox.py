@@ -1,8 +1,8 @@
 import logging
+
 from flask import request, jsonify, render_template
 
 from app.app import app
-from app.auth import require_api_key
 from app.utils.notification_handler import accept_notification, reject_notification, \
     send_validation_to_viz
 
@@ -37,7 +37,7 @@ def receive_notification():
         else:
             reject_notification(notification)
 
-        send_validation_to_viz(hal_id, software_name, notification_type == "Accept")
+        send_validation_to_viz(hal_id, software_name, notification_accepted)
 
     # Respond with the type and actor info
     return jsonify({
