@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 received_notifications = []
 
 @app.route("/inbox", methods=["POST"])
-@require_api_key
 def receive_notification():
     """
     COAR Notify inbox.
