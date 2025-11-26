@@ -34,7 +34,7 @@ def receive_notification():
         return jsonify({
             "status": "ok",
             "type": getattr(notification, "type", None),
-            "actor": getattr(notification['actor'], "id", None)
+            "actor": notification_origin["id"]
         }), 202
 
     if notification_type in ("Accept", "Reject"):
