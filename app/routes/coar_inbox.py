@@ -29,11 +29,11 @@ def receive_notification():
         notification_type = notification_types
 
     if notification_type in ("Accept", "Reject"):
-        notification_json = notification.to_jsonld()
+        logger.info(notification)
 
-        hal_id_full = notification_json['object']['object']['id']
+        hal_id_full = notification['object']['object']['id']
         hal_id = hal_id_full.replace('oai:HAL:', '')
-        software_name = notification_json['object']['object']['sorg:citation']['name']
+        software_name = notification['object']['object']['sorg:citation']['name']
 
         notification_accepted = notification_type == "Accept"
 
