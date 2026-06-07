@@ -36,6 +36,9 @@ def latest_documents():
     """
     Return the most recently ingested documents, newest first.
 
+    Each document includes ``mentions_count`` and ``mentions_with_context_count``
+    (mentions characterized as created/used/shared).
+
     Query param ``limit`` (1-100, default 10) controls how many are returned.
     Public (no API key) so it can be linked directly from the dashboard.
     """

@@ -688,6 +688,11 @@ class DatabaseManager:
         Sorted by ``created_at`` (stamped at ingestion from this version on), so
         documents whose rows predate that field are not returned. Failures yield
         an empty list rather than raising.
+
+        Each row also carries ``mentions_count`` (software mentions linked to the
+        document) and ``mentions_with_context_count`` (those with at least one
+        context characterization — created/used/shared. Mentions whose softice
+        output lacks ``mentionContextAttributes`` count as uncharacterized.
         """
         try:
             return list(
@@ -697,7 +702,21 @@ class DatabaseManager:
                         FILTER d.created_at != null
                         SORT d.created_at DESC
                         LIMIT @limit
-                        RETURN {file_hal_id: d.file_hal_id, created_at: d.created_at}
+                        LET mentions = (
+                            FOR edge IN edge_doc_to_software
+                                FILTER edge._from == d._id
+                                RETURN DOCUMENT(edge._to)
+                        )
+                        RETURN {
+                            file_hal_id: d.file_hal_id,
+                            created_at: d.created_at,
+                            mentions_count: LENGTH(mentions),
+                            mentions_with_context_count: LENGTH(mentions[*
+                                FILTER CURRENT.mentionContextAttributes.created.value == true
+                                    OR CURRENT.mentionContextAttributes.used.value == true
+                                    OR CURRENT.mentionContextAttributes.shared.value == true
+                            ])
+                        }
                     """,
                     bind_vars={"limit": limit},
                     raw_results=True,
@@ -712,7 +731,10 @@ class DatabaseManager:
         The ``limit`` most recently ingested software mentions, newest first.
 
         Sorted by ``created_at`` like get_latest_documents. Returns the
-        normalized software name plus its ingestion timestamp.
+        normalized software name and ingestion timestamp, plus a ``context``
+        object with the created/used/shared characterization booleans. A mention
+        whose softice output lacks ``mentionContextAttributes`` reports all three
+        as ``false``.
         """
         try:
             return list(
@@ -722,7 +744,15 @@ class DatabaseManager:
                         FILTER s.created_at != null
                         SORT s.created_at DESC
                         LIMIT @limit
-                        RETURN {name: s.software_name.normalizedForm, created_at: s.created_at}
+                        RETURN {
+                            name: s.software_name.normalizedForm,
+                            created_at: s.created_at,
+                            context: {
+                                created: s.mentionContextAttributes.created.value == true,
+                                used: s.mentionContextAttributes.used.value == true,
+                                shared: s.mentionContextAttributes.shared.value == true
+                            }
+                        }
                     """,
                     bind_vars={"limit": limit},
                     raw_results=True,

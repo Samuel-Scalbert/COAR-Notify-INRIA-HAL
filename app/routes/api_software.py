@@ -32,6 +32,9 @@ def latest_software():
     """
     Return the most recently ingested software mentions, newest first.
 
+    Each mention includes a ``context`` object with the created/used/shared
+    characterization booleans.
+
     Query param ``limit`` (1-100, default 10) controls how many are returned.
     Public (no API key) so it can be linked directly from the dashboard. This
     static rule is matched ahead of ``/api/software/<id_mention>`` by Werkzeug,
