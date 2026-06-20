@@ -153,7 +153,7 @@ see [Database Schema Documentation](docs/database.md).
 | DELETE                   | `/api/document/<id>`                   | Yes           | Delete document and all software mentions|
 | GET                      | `/api/document/<id>/software`          | No            | All software for document                |
 | GET                      | `/api/document/<id>/software/<id_sw>`  | No            | Specific software for document           |
-| POST                     | `/api/document`                        | Yes           | Insert document (triggers notifications) |
+| POST                     | `/api/document`                        | Yes           | Insert document (notifications optional, see `notify`) |
 | **Software Endpoints**   |
 | GET                      | `/api/software`                        | No            | Software collection status               |
 | GET                      | `/api/software/latest`                 | No            | Latest ingested mentions (newest first)  |
@@ -300,8 +300,9 @@ Response examples:
     - Content-Type: `multipart/form-data` with fields:
         - `file`: JSON file containing software metadata (required)
         - `document_id`: HAL identifier for the document (required)
+        - `notify`: whether to send notifications after ingestion (optional, default `true`). Set to `false` (also accepts `0`, `no`, `off`) to load the data without sending any notification — useful for bulk imports.
     - Returns 201 on new insert, 409 if already exists
-    - Triggers notification send attempt to HAL and Software Heritage
+    - When `notify` is enabled (default), triggers a notification send attempt to HAL and Software Heritage; when disabled the response contains `"notifications": {"skipped": true}`
 
 Examples:
 
@@ -331,6 +332,14 @@ curl -s -X POST \
   -H "x-api-key: $API_KEY" \
   -F "file=@/path/to/your.json" \
   -F "document_id=hal-01478788" \
+  http://localhost:5000/api/document | jq
+
+# Load a document WITHOUT sending any notification (e.g. bulk import)
+curl -s -X POST \
+  -H "x-api-key: $API_KEY" \
+  -F "file=@/path/to/your.json" \
+  -F "document_id=hal-01478788" \
+  -F "notify=false" \
   http://localhost:5000/api/document | jq
 ```
 

@@ -14,6 +14,22 @@ logger = logging.getLogger(__name__)
 
 api_documents_bp = Blueprint("api_documents", __name__)
 
+# Form values that disable notification sending on ingestion. Anything else
+# (including an absent field) keeps the default behaviour of notifying, so
+# existing callers are unaffected.
+_FALSY_FORM_VALUES = {"false", "0", "no", "off"}
+
+
+def _wants_notifications(raw_value: str | None) -> bool:
+    """Parse the optional ``notify`` form field into a boolean.
+
+    Form fields arrive as strings, so ``bool("false")`` would wrongly be True.
+    Defaults to True (notify) when the field is missing or empty.
+    """
+    if raw_value is None or raw_value.strip() == "":
+        return True
+    return raw_value.strip().lower() not in _FALSY_FORM_VALUES
+
 
 @api_documents_bp.route("/api/documents", methods=["GET"])
 def documents_status():
@@ -118,6 +134,10 @@ def insert_new_document():
     """
     Expects a JSON file uploaded as form-data with key 'file' and a mandatory document_id
     field used as the HAL identifier for the document.
+
+    Optional form field ``notify`` (default ``true``) controls whether COAR
+    notifications are sent to HAL/SWH after ingestion. Pass ``notify=false`` to
+    load data without sending any notification, e.g. for bulk imports.
     """
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -127,6 +147,7 @@ def insert_new_document():
         return jsonify({"error": "document_id parameter is required"}), 400
 
     file = request.files["file"]
+    notify = _wants_notifications(request.form.get("notify"))
 
     try:
         db_manager = get_db()
@@ -143,6 +164,16 @@ def insert_new_document():
                 "document_id": document_id,
             }
         ), 409
+
+    if not notify:
+        logger.info(f"Document {document_id} inserted without sending notifications (notify=false)")
+        return jsonify(
+            {
+                "status": "inserted",
+                "document_id": document_id,
+                "notifications": {"skipped": True},
+            }
+        ), 201
 
     notifications = get_software_notifications(document_id)
     notification_results = {}
