@@ -82,7 +82,9 @@ ARANGO_ROOT_PASSWORD=examplepassword
     "created": {"value": true, "score": 0.6474452614784241},
     "shared": {"value": false, "score": 1.0728836059570312e-06}
   },
-  "verification_by_author": false
+  "blacklisted": false,
+  "verification_by_author": false,
+  "created_at": "2026-04-16T07:30:00.000000+00:00"
 }
 ```
 
@@ -102,7 +104,9 @@ ARANGO_ROOT_PASSWORD=examplepassword
 | `context` | string | Surrounding text where software was mentioned | Yes |
 | `mentionContextAttributes` | object | Confidence scores at mention level | Yes |
 | `documentContextAttributes` | object | Confidence scores at document level | Yes |
+| `blacklisted` | boolean | Set at ingestion when the normalized name is on the blacklist; excludes the mention from notifications | No |
 | `verification_by_author` | boolean | Author verification status | No |
+| `created_at` | string | ISO-8601 UTC ingestion timestamp | No |
 
 #### Context Attributes
 
@@ -187,6 +191,44 @@ Each attribute has:
 - Written by `DatabaseManager.store_received_notification` (see `app/utils/db.py`)
 - Read by `DatabaseManager.list_received_notifications` (newest-first, limit-bounded)
 
+---
+
+### 5. Blacklist Collection (`blacklist`)
+
+**Type**: Document Collection
+**Purpose**: Persistent store of blacklisted software names. A name on this list does not block ingestion;
+it marks matching mentions `blacklisted: true` so they are excluded from outbound notifications.
+
+#### Schema
+
+```json
+{
+  "_key": "auto-generated",
+  "_id": "blacklist/8873932",
+  "name": "Python"
+}
+```
+
+#### Fields
+
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `_key` | string | Auto-generated unique identifier | Yes |
+| `_id` | string | Auto-generated document ID | Yes |
+| `name` | string | A blacklisted normalized software name | Yes |
+
+#### Indexes
+
+- **Unique Index** on `name` — makes adds idempotent at the DB level and speeds membership lookups
+
+#### Lifecycle
+
+- Seeded once from `app/static/data/blacklist.csv` at startup (`seed_blacklist_from_csv`, no-op once populated)
+- Managed at runtime via `DatabaseManager.add_blacklist_term` / `remove_blacklist_term` / `clear_blacklist`
+  and the `/api/blacklist*` endpoints (and the `/blacklist` web UI)
+- Read into a set by `get_blacklist_terms`; consumed at ingestion (to set the flag) and by
+  `reapply_blacklist` (to recompute flags on existing mentions)
+
 ## Data Flow
 
 ### 1. Document Ingestion
@@ -198,8 +240,8 @@ graph TD
     C -->|No| D[Create Document Record]
     C -->|Yes| E[Skip Duplicate]
     D --> F[Process Mentions]
-    F --> G[Filter by Blacklist]
-    G --> H[Create Software Records]
+    F --> G[Flag against Blacklist]
+    G --> H[Create Software Records (all, with blacklisted flag)]
     H --> I[Create Edge Relationships]
 ```
 
@@ -211,13 +253,17 @@ graph TD
 ### 2. Software Extraction
 
 1. Software mentions are extracted from the `mentions` array
-2. Each mention is filtered against the blacklist in `app/static/data/blacklist.csv`
-3. Valid software entries are stored in `software` collection
+2. Each mention is checked against the `blacklist` collection and stamped with `blacklisted: true|false`
+   (no mention is dropped)
+3. **All** mentions are stored in the `software` collection
 4. Field normalization occurs (`software-name` → `software_name`)
+
+The blacklist is enforced later, when notifications are built: mentions flagged `blacklisted` are excluded
+from what is sent to providers.
 
 ### 3. Relationship Creation
 
-1. For each valid software mention, an edge is created
+1. For each software mention, an edge is created
 2. Links the document (`_from`) to the software (`_to`)
 3. Enables complex graph traversal queries
 4. Supports aggregation and analysis operations
@@ -243,10 +289,11 @@ graph LR
 
 ### Blacklist System
 
-- **Purpose**: Filters out generic or non-software terms
-- **Location**: `./app/static/data/blacklist.csv`
-- **Size**: 255+ terms
-- **Management**: Full CRUD API for dynamic management
+- **Purpose**: Flags generic or non-software terms so they are excluded from notifications (mentions are
+  still stored, not dropped)
+- **Storage**: ArangoDB `blacklist` collection (persistent); seeded once from `./app/static/data/blacklist.csv`
+- **Management**: Full CRUD API plus a `/blacklist` web UI; `reapply` recomputes flags on existing mentions,
+  and `match-count` is a read-only impact dry run
 
 ### Provider Detection
 
@@ -340,6 +387,7 @@ idempotent, so it is safe across restarts and concurrent workers.
 | `documents` | `file_hal_id` | persistent, **unique** | Prevents duplicate HAL documents at the DB level (in addition to the app-level `document_exists` check) and speeds up lookups by HAL id |
 | `received_notifications` | `origin` | persistent | Speeds up filtering notifications by origin (`swh` / `hal` / `unknown`) |
 | `received_notifications` | `received_at` | persistent | Speeds up the newest-first (`SORT ... DESC`) listing |
+| `blacklist` | `name` | persistent, **unique** | Makes term adds idempotent and speeds membership lookups |
 
 > **Not yet indexed in code:** lookups on `software.software_name.normalizedForm`
 > and filtering on `software.verification_by_author` would benefit from indexes,
@@ -359,7 +407,9 @@ idempotent, so it is safe across restarts and concurrent workers.
 ## Security
 
 ### Authentication
-- API key required for write operations (blacklist management)
+- API key (`x-api-key`) required for document write operations (`POST`/`DELETE /api/document`)
+- Blacklist write endpoints are **not** API-key protected (they back the public `/blacklist` UI); restrict
+  them at the reverse proxy if needed
 - Environment-based configuration for database credentials
 - Input validation and sanitization
 
@@ -371,14 +421,14 @@ idempotent, so it is safe across restarts and concurrent workers.
 ## Backup and Recovery
 
 ### Recommended Backup Strategy
-1. Regular database snapshots
-2. Blacklist CSV version control
+1. Regular database snapshots (the `blacklist` collection is part of the DB, so snapshots capture it)
+2. Keep the seed `blacklist.csv` under version control as a baseline
 3. Configuration file backups
 4. Document metadata export
 
 ### Recovery Procedures
 1. Restore database from snapshot
-2. Reload blacklist from CSV
+2. If the `blacklist` collection is empty, restart (re-seeds from CSV) or `POST /api/blacklist/reload`
 3. Verify collection integrity
 4. Test API endpoints
 

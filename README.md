@@ -36,7 +36,8 @@ specification to enable bidirectional communication between research repositorie
 - **Multi-Provider Support**: Handles HAL, Software Heritage, Zenodo, and GitHub repositories
 - **COAR-Compliant Notifications**: Sends and receives standardized notifications for verification workflows
 - **Graph-Based Data Model**: Uses ArangoDB to store complex relationships between documents and software
-- **Blacklist Management**: Filters out generic or non-software terms with a managed blacklist system
+- **Blacklist Management**: Flags generic or non-software terms via a persistent, ArangoDB-backed blacklist
+  (with a web UI); flagged mentions are still stored but excluded from outbound notifications
 - **RESTful API**: Complete API for document management, software queries, and system administration
 - **Provider-Aware Processing**: Different notification types and processing logic per data provider
 
@@ -107,17 +108,22 @@ FLASK_PORT=5000
 
 ## Database Schema
 
-The system uses ArangoDB with three main collections:
+The system uses ArangoDB with these collections:
 
 - **Documents Collection** (`documents`): Stores HAL document metadata with unique HAL identifiers
-- **Software Collection** (`software`): Contains extracted software mentions with confidence scores and context
+- **Software Collection** (`software`): Contains extracted software mentions with confidence scores and context.
+  Each mention carries a `blacklisted` boolean (see Blacklist below)
 - **Edge Collection** (`edge_doc_to_software`): Creates relationships between documents and software mentions
+- **Blacklist Collection** (`blacklist`): Persistent set of blacklisted terms (one `name` per document,
+  unique-indexed); seeded once from `app/static/data/blacklist.csv` then managed via the API/UI
+- **Received Notifications Collection** (`received_notifications`): Inbound COAR notifications, for inspection
 
 ### Key Database Features
 
 - **Graph Capabilities**: Enables complex traversal queries between documents and software
 - **Automatic Indexing**: Optimized for performance with unique constraints
-- **Blacklist Filtering**: 255+ terms filtered automatically during ingestion
+- **Blacklist Flagging**: Mentions are *flagged* (not dropped) at ingestion; the blacklist is enforced only
+  when notifications are sent. The blacklist lives in ArangoDB, so runtime edits survive restarts
 - **Verification Tracking**: COAR notifications update `verification_by_author` status
 
 For comprehensive database documentation including schemas, queries, and performance considerations,
@@ -139,6 +145,7 @@ see [Database Schema Documentation](docs/database.md).
 | GET                      | `/`                                    | No            | Home page with database status           |
 | GET                      | `/health`                              | No            | Service health check                     |
 | GET                      | `/status`                              | Yes           | Upload capability check                  |
+| GET                      | `/blacklist`                           | No            | Blacklist management web UI               |
 | **Document Management**  |
 | GET                      | `/api/documents`                       | No            | Documents collection status              |
 | GET                      | `/api/documents/latest`                | No            | Latest ingested documents (newest first) |
@@ -155,11 +162,13 @@ see [Database Schema Documentation](docs/database.md).
 | **Blacklist Management** |
 | GET                      | `/api/blacklist`                       | No            | View/search blacklist                    |
 | GET                      | `/api/blacklist/stats`                 | No            | Blacklist statistics                     |
-| POST                     | `/api/blacklist`                       | Yes           | Add term to blacklist                    |
-| DELETE                   | `/api/blacklist/<term>`                | Yes           | Remove term from blacklist               |
-| POST                     | `/api/blacklist/reload`                | Yes           | Reload blacklist from file               |
+| GET                      | `/api/blacklist/match-count`           | No            | Dry run: stored mentions the list flags  |
+| POST                     | `/api/blacklist`                       | No            | Add term to blacklist                    |
+| DELETE                   | `/api/blacklist/<term>`                | No            | Remove term from blacklist               |
+| POST                     | `/api/blacklist/reapply`               | No            | Recompute flag on all stored mentions    |
+| POST                     | `/api/blacklist/reload`                | No            | Merge seed CSV into the collection        |
 | GET                      | `/api/blacklist/export`                | No            | Export blacklist as CSV                  |
-| POST                     | `/api/blacklist/import`                | Yes           | Import blacklist from CSV                |
+| POST                     | `/api/blacklist/import`                | No            | Import blacklist from CSV                |
 | **COAR Notify Inbox**    |
 | GET                      | `/inbox`                               | No            | Get inbox API documentation              |
 | POST                     | `/inbox`                               | No            | Receive COAR notification                |
@@ -374,7 +383,24 @@ curl -s http://localhost:5000/api/software/mention456 | jq
 
 ### Blacklist Management
 
-The blacklist system filters out generic or non-software terms during document processing.
+The blacklist holds generic or non-software terms (e.g. `Python`, `Windows`, `Section`) that should not
+generate notifications. Its behaviour:
+
+- **Flag, don't drop.** At ingestion every mention is stored; mentions whose normalized name is on the
+  blacklist are marked `blacklisted: true` on the `software` document. Nothing is silently discarded.
+- **Enforced only at notification time.** When notifications are built, blacklisted mentions are excluded
+  from what is sent to HAL and Software Heritage (the rest of the data, and the APIs, still expose them).
+- **Persistent storage.** The blacklist lives in the ArangoDB `blacklist` collection, so edits made through
+  the API or UI survive restarts. On first startup it is seeded once from `app/static/data/blacklist.csv`.
+- **Web UI.** A management page is available at `/blacklist` (add/remove/filter terms, a read-only
+  *Count matches* dry run, *Reapply*, and CSV export).
+
+> **Note on auth:** the blacklist write endpoints below (`POST`/`DELETE`/`reapply`/`reload`/`import`) are
+> **not** behind `x-api-key` — they back the unauthenticated `/blacklist` UI. Gate them at the reverse proxy
+> if the UI must be restricted.
+
+Because enforcement uses the stored flag, changing the blacklist does **not** retroactively change already
+ingested documents — run **Reapply** (`POST /api/blacklist/reapply`) to recompute flags across stored mentions.
 
 #### View Blacklist
 
@@ -387,27 +413,41 @@ The blacklist system filters out generic or non-software terms during document p
 #### Get Blacklist Statistics
 
 - **GET `/api/blacklist/stats`**
-    - Returns statistics about the blacklist (total terms, file info)
+    - Returns statistics about the blacklist (total terms, storage backend, seed path)
+
+#### Count Matches (dry run)
+
+- **GET `/api/blacklist/match-count`**
+    - Read-only: counts how many **stored** mentions the current blacklist would flag, without changing
+      anything. Returns `total_mentions`, `matching_mentions`, `matching_names`, and `blacklist_terms`.
+    - Useful to size up the impact before running Reapply.
 
 #### Add Term to Blacklist
 
 - **POST `/api/blacklist`**
-    - Headers: `x-api-key`
     - JSON Body: `{"term": "term_to_add"}`
     - Returns 201 on success, 409 if term already exists
 
 #### Remove Term from Blacklist
 
 - **DELETE `/api/blacklist/<term>`**
-    - Headers: `x-api-key`
     - Returns 200 on success, 404 if term not found
+    - The term is taken as a URL path segment (a `path` converter, so names containing `/` are supported);
+      percent-encode it in the client.
 
-#### Reload Blacklist from File
+#### Reapply Blacklist to Existing Documents
+
+- **POST `/api/blacklist/reapply`**
+    - Recomputes the `blacklisted` flag on **every** stored mention against the current blacklist (sets
+      `true` for listed names, `false` otherwise — also backfilling mentions ingested before the flag existed).
+    - Returns `{"status": "reapplied", "updated": N, "blacklisted": M}`.
+    - This is a single AQL `UPDATE` over the whole `software` collection; on large datasets it can take a while.
+
+#### Reload Blacklist from the Seed CSV
 
 - **POST `/api/blacklist/reload`**
-    - Headers: `x-api-key`
-    - Reloads blacklist from CSV file
-    - Returns total number of terms loaded
+    - Merges the seed CSV (`app/static/data/blacklist.csv`) into the collection, adding any missing terms
+      (existing terms are left untouched). Returns the total term count.
 
 #### Export Blacklist
 
@@ -417,10 +457,9 @@ The blacklist system filters out generic or non-software terms during document p
 #### Import Blacklist
 
 - **POST `/api/blacklist/import`**
-    - Headers: `x-api-key`
     - Form Data:
         - `file`: CSV file to import (required)
-        - `overwrite`: Whether to overwrite existing blacklist (default: false)
+        - `overwrite`: Whether to clear the collection before importing (default: false)
     - Returns import results with statistics
 
 Examples:
@@ -435,22 +474,23 @@ curl -s "http://localhost:5000/api/blacklist?search=python&limit=10" | jq
 # Get statistics
 curl -s http://localhost:5000/api/blacklist/stats | jq
 
-# Add term (requires API key)
+# Count how many stored mentions the current blacklist would flag (read-only)
+curl -s http://localhost:5000/api/blacklist/match-count | jq
+
+# Add term
 curl -s -X POST \
-  -H "x-api-key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"term": "example"}' \
   http://localhost:5000/api/blacklist | jq
 
-# Remove term (requires API key)
-curl -s -X DELETE \
-  -H "x-api-key: $API_KEY" \
-  http://localhost:5000/api/blacklist/example | jq
+# Remove term (percent-encode names containing "/")
+curl -s -X DELETE http://localhost:5000/api/blacklist/example | jq
 
-# Reload blacklist (requires API key)
-curl -s -X POST \
-  -H "x-api-key: $API_KEY" \
-  http://localhost:5000/api/blacklist/reload | jq
+# Recompute the blacklisted flag on all stored mentions
+curl -s -X POST http://localhost:5000/api/blacklist/reapply | jq
+
+# Merge the seed CSV into the collection
+curl -s -X POST http://localhost:5000/api/blacklist/reload | jq
 
 # Export blacklist
 curl -s http://localhost:5000/api/blacklist/export -o blacklist.csv
@@ -662,6 +702,10 @@ Equivalent defaults in `config.json`:
 An unknown or misspelled mode is **not** treated as an error: a warning is logged and all notifications are
 passed through unchanged, so a typo never silently drops notifications. The number of mentions skipped by a
 filter is logged per document.
+
+Independently of the mode filter, mentions flagged `blacklisted` (see [Blacklist Management](#blacklist-management))
+are always excluded from outbound notifications. The blacklist filter runs first, then the per-provider mode
+filter; both log how many mentions they skip per document.
 
 ## Receiving notifications
 
