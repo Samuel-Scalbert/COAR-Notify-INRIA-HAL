@@ -373,9 +373,7 @@ class DatabaseManager:
             logger.error(f"Failed to clear blacklist: {e}")
             return 0
 
-    def seed_blacklist_from_csv(
-        self, csv_path: str = "./app/static/data/blacklist.csv"
-    ) -> int:
+    def seed_blacklist_from_csv(self, csv_path: str = "./app/static/data/blacklist.csv") -> int:
         """
         Populate the blacklist collection from the seed CSV when it is empty.
 
@@ -420,9 +418,7 @@ class DatabaseManager:
                     blacklist_terms: LENGTH(@bl)
                 }
             """
-            return list(
-                self.execute_aql_query(query, bind_vars={"bl": terms}, raw_results=True)
-            )[0]
+            return list(self.execute_aql_query(query, bind_vars={"bl": terms}, raw_results=True))[0]
         except Exception as e:
             logger.error(f"Failed to count blacklist matches: {e}")
             return {
