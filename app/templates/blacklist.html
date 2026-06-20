@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COAR Notify INRIA HAL &middot; Blacklist</title>
+  <style>
+    :root {
+      --accent: #007bff;
+      --accent-dark: #0056b3;
+      --bg-soft: #f8f9fa;
+      --border: #e6e8eb;
+      --danger: #c62828;
+      --danger-soft: #ffebee;
+      --ok: #2e7d32;
+      --ok-soft: #e8f5e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem auto;
+      line-height: 1.6;
+      max-width: 860px;
+      padding: 0 1rem;
+      color: #212529;
+    }
+    .header { border-bottom: 2px solid #eee; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+    .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+    .header-row h1 { margin: 0; }
+    .header-row p { margin: .25rem 0 0; color: #666; }
+    .back { color: var(--accent); text-decoration: none; font-size: .9rem; }
+    .back:hover { text-decoration: underline; }
+    .pill {
+      padding: .4rem .9rem; border-radius: 999px; font-weight: 600; white-space: nowrap;
+      background: var(--ok-soft); color: var(--ok); border: 1px solid #4caf50;
+    }
+    .card {
+      background: var(--bg-soft); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0;
+    }
+    .toolbar { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
+    .field { display: flex; flex-direction: column; gap: .3rem; flex: 1; min-width: 200px; }
+    .field label { font-size: .8rem; color: #495057; font-weight: 600; }
+    input[type="text"] {
+      padding: .6rem .75rem; font-size: 1rem; border: 1px solid #ccd1d6;
+      border-radius: 6px; background: #fff; width: 100%;
+    }
+    input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,123,255,.15); }
+    button {
+      padding: .6rem 1.1rem; font-size: .95rem; font-weight: 600; cursor: pointer;
+      border-radius: 6px; border: 1px solid transparent; transition: background .15s, opacity .15s;
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
+    .btn-secondary { background: #fff; color: #495057; border-color: #ccd1d6; }
+    .btn-secondary:hover:not(:disabled) { background: #eef0f2; }
+    .btn-danger { background: #fff; color: var(--danger); border-color: #f1c2c2; }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
+
+    .list-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 1.5rem; }
+    .list-head h2 { margin: 0; color: #495057; }
+    .count { color: #6c757d; font-size: .9rem; }
+    ul.terms { list-style: none; margin: .75rem 0 0; padding: 0; max-height: 460px; overflow-y: auto;
+      border: 1px solid var(--border); border-radius: 8px; }
+    ul.terms li {
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+      padding: .55rem .9rem; border-bottom: 1px solid #eef0f2; background: #fff;
+    }
+    ul.terms li:last-child { border-bottom: none; }
+    ul.terms li:hover { background: #f4f8ff; }
+    ul.terms .term-name { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; word-break: break-all; }
+    .remove {
+      background: none; border: none; color: #b0b6bd; font-size: 1.2rem; line-height: 1;
+      padding: .1rem .5rem; border-radius: 6px; cursor: pointer;
+    }
+    .remove:hover { color: var(--danger); background: var(--danger-soft); }
+    .empty, .loading { color: #888; font-style: italic; padding: 1rem; text-align: center; }
+    .actions { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+    .actions .note { color: #6c757d; font-size: .85rem; flex-basis: 100%; margin: 0; }
+    a.link-btn { text-decoration: none; }
+
+    /* Toasts */
+    #toasts { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 50; }
+    .toast {
+      padding: .7rem 1rem; border-radius: 8px; color: #fff; font-size: .9rem; min-width: 220px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.18); animation: slidein .2s ease;
+    }
+    .toast.ok { background: #2e7d32; }
+    .toast.err { background: #c62828; }
+    .toast.info { background: #37474f; }
+    @keyframes slidein { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #eee; color: #999; font-size: .8rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-row">
+      <div>
+        <h1>Blacklist</h1>
+        <p>Software names flagged here are still ingested, but excluded from outbound notifications.</p>
+        <a class="back" href="{{ url_for('home') }}">&larr; Back to dashboard</a>
+      </div>
+      <div><span class="pill" id="total-pill">&hellip; terms</span></div>
+    </div>
+  </div>
+
+  <main>
+    <div class="card">
+      <div class="toolbar">
+        <div class="field">
+          <label for="new-term">Add a term</label>
+          <input type="text" id="new-term" placeholder="e.g. Linux" autocomplete="off">
+        </div>
+        <button class="btn-primary" id="add-btn">Add to blacklist</button>
+        <div class="field">
+          <label for="search">Filter</label>
+          <input type="text" id="search" placeholder="Search terms&hellip;" autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="list-head">
+      <h2>Current blacklist</h2>
+      <span class="count" id="list-count"></span>
+    </div>
+    <ul class="terms" id="term-list">
+      <li class="loading">Loading&hellip;</li>
+    </ul>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="actions">
+        <button class="btn-secondary" id="count-btn">Count matches in stored documents</button>
+        <button class="btn-secondary" id="reapply-btn">Reapply to existing documents</button>
+        <a class="link-btn" href="{{ url_for('api_software.export_blacklist') }}">
+          <button class="btn-secondary" type="button">Export CSV</button>
+        </a>
+        <p class="note" id="match-note">
+          <strong>Count matches</strong> is a read-only dry run: it reports how many stored mentions
+          the current blacklist would flag, without changing anything. Adding/removing a term affects
+          <strong>newly ingested</strong> documents immediately; use <em>Reapply</em> to recompute the
+          flag on documents already stored.
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <div class="footer">COAR Notify INRIA HAL &middot; v{{ app_version }}</div>
+  <div id="toasts"></div>
+
+  <script>
+    // Flask-provided endpoint URLs (respect any reverse-proxy prefix).
+    const API = {
+      list: "{{ url_for('api_software.get_blacklist') }}",
+      add: "{{ url_for('api_software.add_to_blacklist') }}",
+      reapply: "{{ url_for('api_software.reapply_blacklist') }}",
+      matchCount: "{{ url_for('api_software.blacklist_match_count') }}",
+      // Path template; the term is substituted + encoded at call time.
+      removeBase: "{{ url_for('api_software.remove_from_blacklist', term='__TERM__') }}",
+    };
+
+    let allTerms = [];
+
+    const listEl = document.getElementById('term-list');
+    const totalPill = document.getElementById('total-pill');
+    const listCount = document.getElementById('list-count');
+    const searchEl = document.getElementById('search');
+    const newTermEl = document.getElementById('new-term');
+
+    function toast(message, kind = 'info') {
+      const el = document.createElement('div');
+      el.className = `toast ${kind}`;
+      el.textContent = message;
+      document.getElementById('toasts').appendChild(el);
+      setTimeout(() => el.remove(), 3500);
+    }
+
+    function removeUrl(term) {
+      // url_for percent-encodes the placeholder; swap in the real (encoded) term.
+      return API.removeBase.replace('__TERM__', encodeURIComponent(term));
+    }
+
+    function render() {
+      const q = searchEl.value.trim().toLowerCase();
+      const shown = q ? allTerms.filter(t => t.toLowerCase().includes(q)) : allTerms;
+
+      totalPill.textContent = `${allTerms.length} term${allTerms.length === 1 ? '' : 's'}`;
+      listCount.textContent = q ? `${shown.length} of ${allTerms.length} shown` : '';
+
+      if (!shown.length) {
+        listEl.innerHTML = `<li class="empty">${q ? 'No terms match your filter.' : 'The blacklist is empty.'}</li>`;
+        return;
+      }
+      listEl.innerHTML = '';
+      for (const term of shown) {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'term-name';
+        name.textContent = term;
+        const btn = document.createElement('button');
+        btn.className = 'remove';
+        btn.title = `Remove "${term}"`;
+        btn.setAttribute('aria-label', `Remove ${term}`);
+        btn.textContent = '×';
+        btn.addEventListener('click', () => removeTerm(term));
+        li.append(name, btn);
+        listEl.appendChild(li);
+      }
+    }
+
+    async function loadTerms() {
+      try {
+        const res = await fetch(API.list);
+        const data = await res.json();
+        allTerms = (data.terms || []).slice().sort((a, b) => a.localeCompare(b));
+        render();
+      } catch (err) {
+        listEl.innerHTML = '';
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = `Failed to load blacklist: ${err}`;
+        listEl.appendChild(li);
+      }
+    }
+
+    async function addTerm() {
+      const term = newTermEl.value.trim();
+      if (!term) { toast('Enter a term first.', 'info'); return; }
+      try {
+        const res = await fetch(API.add, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ term }),
+        });
+        const data = await res.json();
+        if (res.status === 201) {
+          newTermEl.value = '';
+          toast(`Added "${term}".`, 'ok');
+          await loadTerms();
+        } else if (res.status === 409) {
+          toast(`"${term}" is already blacklisted.`, 'info');
+        } else {
+          toast(data.error || 'Failed to add term.', 'err');
+        }
+      } catch (err) {
+        toast(`Error: ${err}`, 'err');
+      }
+    }
+
+    async function removeTerm(term) {
+      try {
+        const res = await fetch(removeUrl(term), { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+          toast(`Removed "${term}".`, 'ok');
+          allTerms = allTerms.filter(t => t !== term);
+          render();
+        } else {
+          toast(data.message || data.error || 'Failed to remove term.', 'err');
+        }
+      } catch (err) {
+        toast(`Error: ${err}`, 'err');
+      }
+    }
+
+    async function countMatches() {
+      const btn = document.getElementById('count-btn');
+      const note = document.getElementById('match-note');
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Counting…';
+      try {
+        const res = await fetch(API.matchCount);
+        const data = await res.json();
+        if (res.ok) {
+          const msg = `${data.matching_mentions.toLocaleString()} of ${data.total_mentions.toLocaleString()} ` +
+            `stored mentions match the current blacklist (${data.matching_names} distinct name` +
+            `${data.matching_names === 1 ? '' : 's'} of ${data.blacklist_terms} terms).`;
+          note.innerHTML = '';
+          const strong = document.createElement('strong');
+          strong.textContent = 'Dry run: ';
+          note.append(strong, document.createTextNode(msg));
+          toast('Match count updated.', 'ok');
+        } else {
+          toast(data.error || 'Failed to count matches.', 'err');
+        }
+      } catch (err) {
+        toast(`Error: ${err}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+    async function reapply() {
+      const btn = document.getElementById('reapply-btn');
+      if (!confirm('Recompute the blacklist flag on all stored documents now?')) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Reapplying…';
+      try {
+        const res = await fetch(API.reapply, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          toast(`Reapplied: ${data.blacklisted} of ${data.updated} mentions flagged.`, 'ok');
+        } else {
+          toast(data.error || 'Reapply failed.', 'err');
+        }
+      } catch (err) {
+        toast(`Error: ${err}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+    document.getElementById('add-btn').addEventListener('click', addTerm);
+    newTermEl.addEventListener('keydown', e => { if (e.key === 'Enter') addTerm(); });
+    searchEl.addEventListener('input', render);
+    document.getElementById('count-btn').addEventListener('click', countMatches);
+    document.getElementById('reapply-btn').addEventListener('click', reapply);
+
+    loadTerms();
+  </script>
+</body>
+</html>

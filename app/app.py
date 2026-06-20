@@ -60,6 +60,15 @@ try:
 except Exception as e:
     print(f"ArangoDB info: failed to fetch info: {e}")
 
+# One-time migration of the seed CSV into the persistent ArangoDB blacklist
+# collection. No-op once the collection holds any terms.
+try:
+    seeded = db_manager.seed_blacklist_from_csv()
+    if seeded:
+        print(f"Blacklist: seeded {seeded} terms into ArangoDB from CSV")
+except Exception as e:
+    print(f"Blacklist: failed to seed from CSV: {e}")
+
 
 @app.get("/")
 def home():
@@ -96,6 +105,15 @@ def database_info():
             num_collections=connection_info["collections"],
             error=connection_info.get("error"),
         )
+    except Exception as e:
+        return render_template("error.html", error=str(e))
+
+
+@app.get("/blacklist")
+def blacklist_page():
+    """Render the blacklist management UI. Data is loaded client-side from /api/blacklist."""
+    try:
+        return render_template("blacklist.html")
     except Exception as e:
         return render_template("error.html", error=str(e))
 

@@ -244,6 +244,7 @@
       {% if status == 'up' %}
         <a href="{{ url_for('coar_inbox.show_notifications') }}">View received notifications</a>
       {% endif %}
+      <a href="{{ url_for('blacklist_page') }}">Manage blacklist</a>
       <a href="{{ url_for('database_info') }}">Database Info</a>
       <a href="https://github.com/Inria-Datalake/COAR-Notify-INRIA-HAL#readme"
          target="_blank" rel="noopener">Documentation</a>

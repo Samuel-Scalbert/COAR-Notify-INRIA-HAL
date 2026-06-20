@@ -2,7 +2,6 @@ import logging
 
 from flask import Blueprint, Response, jsonify, request
 
-from app.auth import require_api_key
 from app.utils.blacklist_manager import blacklist_manager
 from app.utils.db import get_db
 
@@ -118,8 +117,22 @@ def get_blacklist_stats():
         return jsonify({"error": "Failed to retrieve blacklist statistics"}), 500
 
 
+@api_software_bp.route("/api/blacklist/match-count", methods=["GET"])
+def blacklist_match_count():
+    """
+    Read-only: how many stored software mentions the current blacklist would flag.
+
+    Returns total mentions, matching mentions, distinct matching names, and the
+    blacklist size. Does not modify any data (unlike reapply).
+    """
+    try:
+        return jsonify(get_db().count_software_matching_blacklist())
+    except Exception as e:
+        logger.error(f"Failed to count blacklist matches: {e}")
+        return jsonify({"error": "Failed to count blacklist matches"}), 500
+
+
 @api_software_bp.route("/api/blacklist", methods=["POST"])
-@require_api_key
 def add_to_blacklist():
     try:
         data = request.get_json()
@@ -150,8 +163,7 @@ def add_to_blacklist():
         return jsonify({"error": "Failed to add term to blacklist"}), 500
 
 
-@api_software_bp.route("/api/blacklist/<term>", methods=["DELETE"])
-@require_api_key
+@api_software_bp.route("/api/blacklist/<path:term>", methods=["DELETE"])
 def remove_from_blacklist(term):
     try:
         if blacklist_manager.remove_from_blacklist(term):
@@ -175,7 +187,6 @@ def remove_from_blacklist(term):
 
 
 @api_software_bp.route("/api/blacklist/reload", methods=["POST"])
-@require_api_key
 def reload_blacklist():
     try:
         term_count = blacklist_manager.reload_blacklist()
@@ -189,6 +200,21 @@ def reload_blacklist():
     except Exception as e:
         logger.error(f"Failed to reload blacklist: {e}")
         return jsonify({"error": "Failed to reload blacklist"}), 500
+
+
+@api_software_bp.route("/api/blacklist/reapply", methods=["POST"])
+def reapply_blacklist():
+    """
+    Recompute the ``blacklisted`` flag on all already-stored software mentions
+    against the current (live) blacklist. Use this to propagate blacklist edits
+    to existing documents and to backfill the flag on legacy mentions.
+    """
+    try:
+        result = get_db().reapply_blacklist(blacklist_manager.get_blacklist())
+        return jsonify({"status": "reapplied", **result})
+    except Exception as e:
+        logger.error(f"Failed to reapply blacklist: {e}")
+        return jsonify({"error": "Failed to reapply blacklist"}), 500
 
 
 @api_software_bp.route("/api/blacklist/export", methods=["GET"])
@@ -206,7 +232,6 @@ def export_blacklist():
 
 
 @api_software_bp.route("/api/blacklist/import", methods=["POST"])
-@require_api_key
 def import_blacklist():
     try:
         if "file" not in request.files:

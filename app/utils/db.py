@@ -10,6 +10,8 @@ from pyArango.database import Database
 from pyArango.theExceptions import CreationError
 from werkzeug.datastructures import FileStorage
 
+from app.classes.filters import BlacklistFilter
+
 logger = logging.getLogger(__name__)
 
 # Global database manager instance
@@ -36,6 +38,11 @@ class DatabaseManager:
         "received_notifications": [
             {"fields": ["origin"]},
             {"fields": ["received_at"]},
+        ],
+        # One record per blacklisted term; the unique index makes add idempotent
+        # at the DB level and speeds up membership lookups.
+        "blacklist": [
+            {"fields": ["name"], "unique": True},
         ],
     }
 
@@ -286,6 +293,145 @@ class DatabaseManager:
 
         return blacklist
 
+    def get_blacklist_terms(self) -> set[str]:
+        """Return the set of blacklisted terms stored in the ``blacklist`` collection."""
+        try:
+            self.check_or_create_collection("blacklist")
+            result = self.execute_aql_query("FOR b IN blacklist RETURN b.name", raw_results=True)
+            return {term for term in result if term}
+        except Exception as e:
+            logger.error(f"Failed to read blacklist terms: {e}")
+            return set()
+
+    def count_blacklist_terms(self) -> int:
+        """Return how many terms are in the ``blacklist`` collection."""
+        try:
+            self.check_or_create_collection("blacklist")
+            result = self.execute_aql_query("RETURN LENGTH(blacklist)", raw_results=True)
+            return list(result)[0]
+        except Exception as e:
+            logger.error(f"Failed to count blacklist terms: {e}")
+            return 0
+
+    def add_blacklist_term(self, term: str) -> bool:
+        """
+        Add a term to the blacklist.
+
+        Returns True if inserted, False if blank or already present.
+        """
+        term = (term or "").strip()
+        if not term:
+            return False
+        try:
+            collection = self.check_or_create_collection("blacklist")
+            exists = list(
+                self.execute_aql_query(
+                    "FOR b IN blacklist FILTER b.name == @name LIMIT 1 RETURN 1",
+                    bind_vars={"name": term},
+                    raw_results=True,
+                )
+            )
+            if exists:
+                return False
+            doc = collection.createDocument({"name": term})
+            doc.save()
+            logger.info(f"Added term to blacklist: {term}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add blacklist term '{term}': {e}")
+            return False
+
+    def remove_blacklist_term(self, term: str) -> bool:
+        """Remove a term from the blacklist. Returns True if a term was removed."""
+        try:
+            self.check_or_create_collection("blacklist")
+            removed = list(
+                self.execute_aql_query(
+                    "FOR b IN blacklist FILTER b.name == @name REMOVE b IN blacklist RETURN 1",
+                    bind_vars={"name": term},
+                    raw_results=True,
+                )
+            )
+            if removed:
+                logger.info(f"Removed term from blacklist: {term}")
+            return len(removed) > 0
+        except Exception as e:
+            logger.error(f"Failed to remove blacklist term '{term}': {e}")
+            return False
+
+    def clear_blacklist(self) -> int:
+        """Remove all terms from the blacklist. Returns how many were removed."""
+        try:
+            self.check_or_create_collection("blacklist")
+            removed = list(
+                self.execute_aql_query(
+                    "FOR b IN blacklist REMOVE b IN blacklist RETURN 1", raw_results=True
+                )
+            )
+            return len(removed)
+        except Exception as e:
+            logger.error(f"Failed to clear blacklist: {e}")
+            return 0
+
+    def seed_blacklist_from_csv(
+        self, csv_path: str = "./app/static/data/blacklist.csv"
+    ) -> int:
+        """
+        Populate the blacklist collection from the seed CSV when it is empty.
+
+        This is the one-time migration from the in-image CSV to persistent
+        storage; it is a no-op once the collection holds any terms. Returns the
+        number of terms inserted.
+        """
+        try:
+            self.check_or_create_collection("blacklist")
+            if self.count_blacklist_terms() > 0:
+                return 0
+            terms = self.load_blacklist(csv_path)
+            inserted = sum(1 for term in terms if self.add_blacklist_term(term))
+            logger.info(f"Seeded blacklist collection with {inserted} terms from {csv_path}")
+            return inserted
+        except Exception as e:
+            logger.error(f"Failed to seed blacklist from {csv_path}: {e}")
+            return 0
+
+    def count_software_matching_blacklist(
+        self, blacklist: set[str] | None = None
+    ) -> dict[str, int]:
+        """
+        Count stored software mentions whose normalized name matches the blacklist.
+
+        Read-only dry run: reports the impact of the current (or a supplied)
+        blacklist without changing any ``blacklisted`` flags. Useful to size up a
+        list before running reapply_blacklist.
+        """
+        try:
+            terms = list(self.get_blacklist_terms() if blacklist is None else blacklist)
+            query = """
+                LET matching = (
+                    FOR s IN software
+                        FILTER s.software_name.normalizedForm IN @bl
+                        RETURN s.software_name.normalizedForm
+                )
+                RETURN {
+                    total_mentions: LENGTH(software),
+                    matching_mentions: LENGTH(matching),
+                    matching_names: LENGTH(UNIQUE(matching)),
+                    blacklist_terms: LENGTH(@bl)
+                }
+            """
+            return list(
+                self.execute_aql_query(query, bind_vars={"bl": terms}, raw_results=True)
+            )[0]
+        except Exception as e:
+            logger.error(f"Failed to count blacklist matches: {e}")
+            return {
+                "total_mentions": 0,
+                "matching_mentions": 0,
+                "matching_names": 0,
+                "blacklist_terms": 0,
+            }
+
     def remove_duplicates(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Remove duplicate JSON objects by hashing.
@@ -331,7 +477,6 @@ class DatabaseManager:
         self,
         document_id: str,
         file_json: FileStorage | dict[str, Any],
-        blacklist_csv: str = "./app/static/data/blacklist.csv",
     ) -> bool:
         """
         Insert a JSON file into ArangoDB with document, software, and edge collections.
@@ -339,7 +484,6 @@ class DatabaseManager:
         Args:
             document_id: Unique identifier for the document
             file_json: File object or dictionary containing the data
-            blacklist_csv: Path to blacklist CSV file
 
         Returns:
             True if inserted, False if already exists or failed
@@ -350,8 +494,8 @@ class DatabaseManager:
             software_collection = self.check_or_create_collection("software")
             doc_soft_edge = self.check_or_create_collection("edge_doc_to_software", "Edges")
 
-            # Load blacklist
-            blacklist = self.load_blacklist(blacklist_csv)
+            # Load blacklist from its persistent ArangoDB collection
+            blacklist = self.get_blacklist_terms()
 
             # Process input
             if hasattr(file_json, "read"):
@@ -376,32 +520,42 @@ class DatabaseManager:
             document_document.save()
             logger.debug(f"Created document with ID: {document_id}")
 
-            # Process mentions
+            # Process mentions. We store *every* mention and only flag the ones
+            # whose normalized name is blacklisted; the blacklist is enforced
+            # later, when notifications are built (see get_software_notifications
+            # and filter_blacklisted_notifications).
             mentions = self.remove_duplicates(data_json.get("mentions", []))
+            blacklist_filter = BlacklistFilter(blacklist)
             inserted_count = 0
+            blacklisted_count = 0
 
             for mention in mentions:
-                norm_name = mention["software-name"]["normalizedForm"]
-                if norm_name not in blacklist:
-                    # Rename fields for consistency
-                    mention["software_name"] = mention.pop("software-name")
-                    mention["software_type"] = mention.pop("software-type")
+                # Check before renaming keys (filter tolerates either key).
+                is_blacklisted = blacklist_filter.filter_mention(mention)
 
-                    # Insert software document
-                    mention["created_at"] = now_iso
-                    software_document = software_collection.createDocument(mention)
-                    software_document.save()
+                # Rename fields for consistency
+                mention["software_name"] = mention.pop("software-name")
+                mention["software_type"] = mention.pop("software-type")
 
-                    # Create edge from document to software
-                    edge_doc_soft = doc_soft_edge.createEdge()
-                    edge_doc_soft["_from"] = document_document._id
-                    edge_doc_soft["_to"] = software_document._id
-                    edge_doc_soft.save()
+                # Insert software document
+                mention["blacklisted"] = is_blacklisted
+                mention["created_at"] = now_iso
+                software_document = software_collection.createDocument(mention)
+                software_document.save()
 
-                    inserted_count += 1
+                # Create edge from document to software
+                edge_doc_soft = doc_soft_edge.createEdge()
+                edge_doc_soft["_from"] = document_document._id
+                edge_doc_soft["_to"] = software_document._id
+                edge_doc_soft.save()
+
+                inserted_count += 1
+                if is_blacklisted:
+                    blacklisted_count += 1
 
             logger.info(
-                f"Inserted {inserted_count} software mentions for document with ID: {document_id}"
+                f"Inserted {inserted_count} software mentions "
+                f"({blacklisted_count} blacklisted) for document with ID: {document_id}"
             )
             return True
 
@@ -432,7 +586,8 @@ class DatabaseManager:
                             contexts: mentionsGroup[*].mention.context,
                             created: LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.created.value == true]) > 0,
                             used:    LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.used.value    == true]) > 0,
-                            shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.shared.value  == true]) > 0
+                            shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.shared.value  == true]) > 0,
+                            blacklisted: LENGTH(mentionsGroup[* FILTER CURRENT.mention.blacklisted == true]) > 0
                         }
             """
 
@@ -444,6 +599,44 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get software notifications for {document_id}: {e}")
             return []
+
+    def reapply_blacklist(self, blacklist: set[str]) -> dict[str, int]:
+        """
+        Recompute the ``blacklisted`` flag on every stored software mention.
+
+        Sets ``blacklisted: true`` for mentions whose normalized name is in
+        ``blacklist`` and ``false`` for all others, in a single server-side
+        pass. This also backfills the field on mentions ingested before the
+        flag existed (they become ``false``). The ``IN @blacklist`` check
+        mirrors BlacklistFilter.filter_mention.
+
+        Args:
+            blacklist: Current set of blacklisted normalized software names.
+
+        Returns:
+            Dict with ``updated`` (total mentions touched) and ``blacklisted``
+            (how many ended up flagged).
+        """
+        try:
+            query = """
+                FOR s IN software
+                    UPDATE s WITH { blacklisted: s.software_name.normalizedForm IN @blacklist } IN software
+                    RETURN NEW.blacklisted
+            """
+            flags = list(
+                self.execute_aql_query(
+                    query, bind_vars={"blacklist": list(blacklist)}, raw_results=True
+                )
+            )
+            result = {"updated": len(flags), "blacklisted": sum(1 for f in flags if f)}
+            logger.info(
+                f"Reapplied blacklist: {result['blacklisted']} of {result['updated']} "
+                f"software mentions flagged"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Failed to reapply blacklist: {e}")
+            return {"updated": 0, "blacklisted": 0}
 
     def update_software_with_author_validation(
         self, document_id: str, software_name: str, accepted: bool
@@ -747,6 +940,7 @@ class DatabaseManager:
                         RETURN {
                             name: s.software_name.normalizedForm,
                             created_at: s.created_at,
+                            blacklisted: s.blacklisted == true,
                             context: {
                                 created: s.mentionContextAttributes.created.value == true,
                                 used: s.mentionContextAttributes.used.value == true,
