@@ -94,6 +94,20 @@ def filter_notifications_by_mode(
     ]
 
 
+def filter_blacklisted_notifications(
+    notifications: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Drop notifications whose software name is flagged as blacklisted.
+
+    The 'blacklisted' flag is set per mention at ingestion and aggregated by
+    software name in get_software_notifications. This is the single point where
+    the blacklist is enforced: blacklisted mentions are still stored, they are
+    only excluded from outbound notifications.
+    """
+    return [n for n in notifications if not n.get("blacklisted")]
+
+
 class NotificationType(Enum):
     """Enumeration of notification types."""
 
@@ -306,6 +320,14 @@ def send_notifications_to_swh(document_id: str, notifications=None) -> dict[str,
             )
             return {"success_count": 0, "failure_count": 0, "total_count": 0}
 
+        before_blacklist = len(notifications)
+        notifications = filter_blacklisted_notifications(notifications)
+        blacklisted = before_blacklist - len(notifications)
+        if blacklisted:
+            logger.info(
+                f"SWH blacklist filter skipped {blacklisted} of {before_blacklist} software notifications for {document_id}"
+            )
+
         filter_mode = current_app.config.get("SWH_NOTIFICATION_FILTER", "all")
         before_count = len(notifications)
         notifications = filter_notifications_by_mode(notifications, filter_mode)
@@ -403,6 +425,14 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> dict[str,
                 f"No software retrieved for {document_id}. No notifications will be sent."
             )
             return {"success_count": 0, "failure_count": 0, "total_count": 0}
+
+        before_blacklist = len(notifications)
+        notifications = filter_blacklisted_notifications(notifications)
+        blacklisted = before_blacklist - len(notifications)
+        if blacklisted:
+            logger.info(
+                f"HAL blacklist filter skipped {blacklisted} of {before_blacklist} software notifications for {document_id}"
+            )
 
         filter_mode = current_app.config.get("HAL_NOTIFICATION_FILTER", "all")
         before_count = len(notifications)
