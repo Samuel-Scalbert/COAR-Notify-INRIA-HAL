@@ -61,7 +61,13 @@ def build_pipeline():
 
 
 def train():
-    from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+    from sklearn.metrics import (
+        balanced_accuracy_score,
+        classification_report,
+        confusion_matrix,
+        f1_score,
+        roc_auc_score,
+    )
     from sklearn.model_selection import cross_val_score, train_test_split
 
     names, labels = load(DATA)
@@ -80,23 +86,41 @@ def train():
     proba = pipe.predict_proba(Xte)[:, 1]
     pred = (proba >= 0.5).astype(int)
 
+    # Classes are imbalanced, so lead with macro-F1 / balanced accuracy (per-class
+    # precision/recall/F1 below) rather than plain accuracy, which is inflated by
+    # the majority class (an always-"valid" baseline already scores ~0.74).
     print("\n=== held-out test (threshold 0.5) ===")
+    print(
+        f"PRIMARY (imbalance-robust): macro-F1={f1_score(yte, pred, average='macro'):.3f}  "
+        f"balanced-accuracy={balanced_accuracy_score(yte, pred):.3f}  "
+        f"ROC-AUC={roc_auc_score(yte, proba):.3f}"
+    )
     print(classification_report(yte, pred, target_names=["invalid", "valid"], digits=3))
     print("confusion matrix [rows=true, cols=pred] (invalid, valid):")
     print(confusion_matrix(yte, pred))
-    print(f"ROC-AUC: {roc_auc_score(yte, proba):.3f}")
 
-    # Operating-point table: how precision/recall trade off as we move the threshold.
+    # Operating-point table: how the metrics trade off as we move the threshold.
+    # Reported with F1 (per-class + macro) since the classes are imbalanced; the
+    # best threshold is the one that maximizes macro-F1, not valid precision alone.
     # Higher threshold -> keep fewer names but cleaner (fewer junk kept as valid).
     print("\n=== operating points (decision = 'valid' if proba >= t) ===")
-    print(f"{'thresh':>7} {'valid_precision':>16} {'valid_recall':>13} {'kept%':>7}")
+    print(
+        f"{'thresh':>7} {'valid_P':>8} {'valid_R':>8} {'valid_F1':>9} "
+        f"{'invalid_F1':>11} {'macro_F1':>9} {'kept%':>7}"
+    )
     from sklearn.metrics import precision_score, recall_score
 
     for t in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
         p = (proba >= t).astype(int)
-        prec = precision_score(yte, p, pos_label=1, zero_division=0)
-        rec = recall_score(yte, p, pos_label=1, zero_division=0)
-        print(f"{t:>7.2f} {prec:>16.3f} {rec:>13.3f} {p.mean() * 100:>6.1f}%")
+        vp = precision_score(yte, p, pos_label=1, zero_division=0)
+        vr = recall_score(yte, p, pos_label=1, zero_division=0)
+        vf1 = f1_score(yte, p, pos_label=1, zero_division=0)
+        if1 = f1_score(yte, p, pos_label=0, zero_division=0)
+        mf1 = f1_score(yte, p, average="macro", zero_division=0)
+        print(
+            f"{t:>7.2f} {vp:>8.3f} {vr:>8.3f} {vf1:>9.3f} "
+            f"{if1:>11.3f} {mf1:>9.3f} {p.mean() * 100:>6.1f}%"
+        )
 
     # Refit on ALL data before saving — more data, better final model.
     pipe.fit(names, labels)
@@ -110,7 +134,7 @@ def predict(items):
         raise SystemExit("No model found. Run without --predict first to train.")
     pipe = joblib.load(MODEL)
     proba = pipe.predict_proba(items)[:, 1]
-    for name, pr in zip(items, proba):
+    for name, pr in zip(items, proba, strict=False):
         verdict = "valid" if pr >= 0.5 else "invalid"
         print(f"  {pr:.3f}  {verdict:7}  {name!r}")
 

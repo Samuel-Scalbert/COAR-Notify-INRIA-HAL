@@ -138,20 +138,29 @@ Trained by `sandbox/train_classifier.py`:
 
 ---
 
-## 6. Results — accuracy
+## 6. Results — precision / recall / F1
+
+The classes are imbalanced (73.7% valid / 26.3% invalid), so we report
+**precision, recall and F1 per class** plus **macro-F1** as the primary metrics.
+Plain accuracy is reported only as a secondary figure, with its caveat, because a
+trivial "always predict valid" baseline already scores 73.7% accuracy.
 
 **5-fold CV (train):** macro-F1 = **0.832 ± 0.011** (stable).
 
 **Held-out test (3,978 examples, threshold 0.5):**
 
-| class        | precision   | recall   | f1        | support   |
-|--------------|-------------|----------|-----------|-----------|
-| invalid      | 0.747       | 0.792    | 0.769     | 1,046     |
-| valid        | 0.924       | 0.905    | 0.914     | 2,932     |
-| **accuracy** |             |          | **0.875** | 3,978     |
-| macro avg    | 0.836       | 0.848    | 0.841     | 3,978     |
+| class       | precision | recall | f1        | support |
+|-------------|-----------|--------|-----------|---------|
+| invalid     | 0.747     | 0.792  | 0.769     | 1,046   |
+| valid       | 0.924     | 0.905  | 0.914     | 2,932   |
+| **macro avg** | **0.836** | **0.848** | **0.841** | 3,978 |
 
-**ROC-AUC = 0.926.**
+**Primary (imbalance-robust) headline:** macro-F1 = **0.841**, ROC-AUC = **0.926**.
+
+The `valid` class is detected strongly (P/R ≈ 0.91); the `invalid` class is the
+limiting factor (P=0.75 / R=0.79) because it is the minority and more
+heterogeneous — and it is the class that actually matters for filtering, so we do
+**not** let the majority hide it.
 
 Confusion matrix (rows = true, cols = predicted; order: invalid, valid):
 
@@ -161,26 +170,34 @@ true invalid     828          218
 true valid       280         2652
 ```
 
-The `valid` class is detected strongly (P/R ≈ 0.91); the `invalid` class is
-weaker (P=0.75) because it is the minority and more heterogeneous.
+**Secondary (imbalance-sensitive):** raw accuracy = 0.875, but the majority
+baseline is already 0.737 and **balanced accuracy** (mean of per-class recall) is
+**0.849** — so accuracy overstates performance by only ~2.6 points and should not
+be read as the headline. Note ROC-AUC is mildly optimistic under imbalance;
+per-class F1 above is the more reliable summary.
 
 ### Operating points
 
-The decision threshold trades precision against recall. `kept%` is the share of
-the test set predicted valid.
+The decision threshold trades the classes off against each other. Reported with
+**F1** (per-class and macro) since the classes are imbalanced; `kept%` is the
+share of the test set predicted valid.
 
-| threshold          | valid precision | valid recall | kept%        |
-|--------------------|-----------------|--------------|--------------|
-| 0.30               | 0.893           | 0.958        | 79.1%        |
-| 0.40               | 0.911           | 0.934        | 75.6%        |
-| **0.50** (default) | **0.924**       | **0.905**    | **72.1%**    |
-| 0.60               | 0.940           | 0.863        | 67.6%        |
-| 0.70               | 0.954           | 0.795        | 61.4%        |
-| 0.80               | 0.968           | 0.674        | 51.3%        |
-| 0.90               | 0.983           | 0.431        | 32.3%        |
+| threshold          | valid P | valid R | valid F1 | invalid F1 | macro F1  | kept%     |
+|--------------------|---------|---------|----------|------------|-----------|-----------|
+| 0.30               | 0.893   | 0.958   | 0.924    | 0.755      | 0.840     | 79.1%     |
+| **0.40** (best F1) | 0.911   | 0.934   | 0.922    | **0.771**  | **0.847** | 75.6%     |
+| 0.50 (default)     | 0.924   | 0.905   | 0.914    | 0.769      | 0.841     | 72.1%     |
+| 0.60               | 0.940   | 0.863   | 0.900    | 0.758      | 0.829     | 67.6%     |
+| 0.70               | 0.954   | 0.795   | 0.867    | 0.723      | 0.795     | 61.4%     |
+| 0.80               | 0.968   | 0.674   | 0.794    | 0.658      | 0.726     | 51.3%     |
+| 0.90               | 0.983   | 0.431   | 0.599    | 0.548      | 0.573     | 32.3%     |
 
-A higher `MODEL_FILTER_THRESHOLD` yields cleaner output (fewer junk mentions sent)
-at the cost of dropping more borderline real names.
+**Macro-F1 peaks at threshold ≈ 0.40 (0.847)**, marginally above the 0.50 default
+(0.841) — the model is well-calibrated, so the default is close to F1-optimal. Use
+a higher `MODEL_FILTER_THRESHOLD` for cleaner output (higher valid precision, more
+junk caught) at the cost of dropping more borderline real names; the valid-F1 and
+macro-F1 columns show where that trade-off stops paying off (both fall steadily
+above 0.6).
 
 ---
 

@@ -737,7 +737,9 @@ blacklist (exact-match) can't catch this open-ended garbage, so an optional **st
 scores every mention name as valid/invalid.
 
 - **Model**: character n-gram TF-IDF + logistic regression (`scikit-learn`). Short-string, language-agnostic,
-  ~0.4 ms/mention, ROC-AUC ≈ 0.93 on held-out data. Shipped at `app/static/data/name_classifier.joblib`.
+  ~0.4 ms/mention. On held-out data: macro-F1 ≈ 0.84 (per-class F1: valid 0.91, invalid 0.77), ROC-AUC ≈ 0.93
+  — reported as macro/per-class F1 rather than accuracy because the classes are imbalanced. Shipped at
+  `app/static/data/name_classifier.joblib`.
   For the full dataset/training/validation methodology, metrics, and throughput, see
   [Validity Classifier — Training & Validation](docs/validity-classifier.md).
 - **Two stages, like the blacklist** — flag at ingestion, enforce at send:
