@@ -2,6 +2,7 @@ import csv
 import datetime
 import json
 import logging
+import os
 from typing import Any, Union
 
 from pyArango.collection import Collection
@@ -10,7 +11,7 @@ from pyArango.database import Database
 from pyArango.theExceptions import CreationError
 from werkzeug.datastructures import FileStorage
 
-from app.classes.filters import BlacklistFilter
+from app.classes.filters import BlacklistFilter, ClassifierFilter
 
 logger = logging.getLogger(__name__)
 
@@ -522,12 +523,33 @@ class DatabaseManager:
             # and filter_blacklisted_notifications).
             mentions = self.remove_duplicates(data_json.get("mentions", []))
             blacklist_filter = BlacklistFilter(blacklist)
+            # Structural validity model (see sandbox/train_classifier.py). Opt-in
+            # and tunable via env: MODEL_FILTER_ENABLED (default off) and
+            # MODEL_FILTER_THRESHOLD (default 0.5). Loaded once and reused for
+            # every mention; degrades gracefully if the model file is absent.
+            model_enabled = os.environ.get("MODEL_FILTER_ENABLED", "false").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            model_threshold = float(os.environ.get("MODEL_FILTER_THRESHOLD", "0.5"))
+            classifier_filter = (
+                ClassifierFilter(threshold=model_threshold) if model_enabled else None
+            )
             inserted_count = 0
             blacklisted_count = 0
+            model_invalid_count = 0
 
             for mention in mentions:
-                # Check before renaming keys (filter tolerates either key).
+                # Check before renaming keys (filters tolerate either key).
                 is_blacklisted = blacklist_filter.filter_mention(mention)
+                # Model score is an independent signal from the blacklist; stored
+                # alongside it (never overwriting ``blacklisted``). None when the
+                # model filter is disabled or the name can't be scored.
+                model_score = (
+                    classifier_filter.score(mention) if classifier_filter else None
+                )
+                model_invalid = model_score is not None and model_score < model_threshold
 
                 # Rename fields for consistency
                 mention["software_name"] = mention.pop("software-name")
@@ -535,6 +557,8 @@ class DatabaseManager:
 
                 # Insert software document
                 mention["blacklisted"] = is_blacklisted
+                mention["model_score"] = model_score
+                mention["model_invalid"] = model_invalid
                 mention["created_at"] = now_iso
                 software_document = software_collection.createDocument(mention)
                 software_document.save()
@@ -548,10 +572,13 @@ class DatabaseManager:
                 inserted_count += 1
                 if is_blacklisted:
                     blacklisted_count += 1
+                if model_invalid:
+                    model_invalid_count += 1
 
             logger.info(
                 f"Inserted {inserted_count} software mentions "
-                f"({blacklisted_count} blacklisted) for document with ID: {document_id}"
+                f"({blacklisted_count} blacklisted, {model_invalid_count} model-invalid) "
+                f"for document with ID: {document_id}"
             )
             return True
 
@@ -583,7 +610,8 @@ class DatabaseManager:
                             created: LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.created.value == true]) > 0,
                             used:    LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.used.value    == true]) > 0,
                             shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.shared.value  == true]) > 0,
-                            blacklisted: LENGTH(mentionsGroup[* FILTER CURRENT.mention.blacklisted == true]) > 0
+                            blacklisted: LENGTH(mentionsGroup[* FILTER CURRENT.mention.blacklisted == true]) > 0,
+                            model_invalid: LENGTH(mentionsGroup[* FILTER CURRENT.mention.model_invalid == true]) > 0
                         }
             """
 
