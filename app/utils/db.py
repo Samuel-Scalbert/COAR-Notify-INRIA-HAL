@@ -546,9 +546,7 @@ class DatabaseManager:
                 # Model score is an independent signal from the blacklist; stored
                 # alongside it (never overwriting ``blacklisted``). None when the
                 # model filter is disabled or the name can't be scored.
-                model_score = (
-                    classifier_filter.score(mention) if classifier_filter else None
-                )
+                model_score = classifier_filter.score(mention) if classifier_filter else None
                 model_invalid = model_score is not None and model_score < model_threshold
 
                 # Rename fields for consistency
