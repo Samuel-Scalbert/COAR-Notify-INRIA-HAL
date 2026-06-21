@@ -738,6 +738,8 @@ scores every mention name as valid/invalid.
 
 - **Model**: character n-gram TF-IDF + logistic regression (`scikit-learn`). Short-string, language-agnostic,
   ~0.4 ms/mention, ROC-AUC ≈ 0.93 on held-out data. Shipped at `app/static/data/name_classifier.joblib`.
+  For the full dataset/training/validation methodology, metrics, and throughput, see
+  [Validity Classifier — Training & Validation](docs/validity-classifier.md).
 - **Two stages, like the blacklist** — flag at ingestion, enforce at send:
   - **Ingestion**: each mention is scored and stamped with `model_score` (P(valid), 0–1) and
     `model_invalid` (`true` when `model_score < MODEL_FILTER_THRESHOLD`). No mention is dropped.
