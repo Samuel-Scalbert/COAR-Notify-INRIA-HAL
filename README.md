@@ -19,6 +19,7 @@ from research papers.
     - [COAR Notify Inbox](#coar-notify-inbox)
 - [Notification System](#notification-system)
     - [Notification Filtering](#notification-filtering)
+- [Software Mention Validity Classifier](#software-mention-validity-classifier)
 - [Production Deployment](#production-deployment)
     - [Nginx Reverse Proxy](#nginx-reverse-proxy)
 - [Development](#development)
@@ -38,6 +39,9 @@ specification to enable bidirectional communication between research repositorie
 - **Graph-Based Data Model**: Uses ArangoDB to store complex relationships between documents and software
 - **Blacklist Management**: Flags generic or non-software terms via a persistent, ArangoDB-backed blacklist
   (with a web UI); flagged mentions are still stored but excluded from outbound notifications
+- **Structural Validity Classifier** (optional): A trained char-ngram model scores each mention name as
+  valid/invalid at ingestion; when enabled, invalid mentions are flagged and excluded from notifications
+  (see [Software Mention Validity Classifier](#software-mention-validity-classifier))
 - **RESTful API**: Complete API for document management, software queries, and system administration
 - **Provider-Aware Processing**: Different notification types and processing logic per data provider
 
@@ -105,6 +109,9 @@ FLASK_PORT=5000
   [Notification Filtering](#notification-filtering)
 - `SWH_NOTIFICATION_FILTER`: Which software mentions are sent to Software Heritage (default: `all`); see
   [Notification Filtering](#notification-filtering)
+- `MODEL_FILTER_ENABLED`: Enable the structural validity classifier (default: `false`); see
+  [Software Mention Validity Classifier](#software-mention-validity-classifier)
+- `MODEL_FILTER_THRESHOLD`: Minimum `model_score` (P(valid)) for a name to count as valid (default: `0.5`)
 
 ## Database Schema
 
@@ -112,7 +119,8 @@ The system uses ArangoDB with these collections:
 
 - **Documents Collection** (`documents`): Stores HAL document metadata with unique HAL identifiers
 - **Software Collection** (`software`): Contains extracted software mentions with confidence scores and context.
-  Each mention carries a `blacklisted` boolean (see Blacklist below)
+  Each mention carries a `blacklisted` boolean (see Blacklist below) and, when the classifier is enabled,
+  `model_score` / `model_invalid` (see Validity Classifier below)
 - **Edge Collection** (`edge_doc_to_software`): Creates relationships between documents and software mentions
 - **Blacklist Collection** (`blacklist`): Persistent set of blacklisted terms (one `name` per document,
   unique-indexed); seeded once from `app/static/data/blacklist.csv` then managed via the API/UI
@@ -124,6 +132,9 @@ The system uses ArangoDB with these collections:
 - **Automatic Indexing**: Optimized for performance with unique constraints
 - **Blacklist Flagging**: Mentions are *flagged* (not dropped) at ingestion; the blacklist is enforced only
   when notifications are sent. The blacklist lives in ArangoDB, so runtime edits survive restarts
+- **Model Flagging**: When `MODEL_FILTER_ENABLED=true`, mentions are also *flagged* (not dropped) with a
+  `model_score`/`model_invalid` at ingestion; like the blacklist, the model is enforced only when
+  notifications are sent (see [Software Mention Validity Classifier](#software-mention-validity-classifier))
 - **Verification Tracking**: COAR notifications update `verification_by_author` status
 
 For comprehensive database documentation including schemas, queries, and performance considerations,
@@ -713,8 +724,60 @@ passed through unchanged, so a typo never silently drops notifications. The numb
 filter is logged per document.
 
 Independently of the mode filter, mentions flagged `blacklisted` (see [Blacklist Management](#blacklist-management))
-are always excluded from outbound notifications. The blacklist filter runs first, then the per-provider mode
-filter; both log how many mentions they skip per document.
+are always excluded from outbound notifications, and — when `MODEL_FILTER_ENABLED=true` — mentions flagged
+`model_invalid` (see [Software Mention Validity Classifier](#software-mention-validity-classifier)) are excluded
+too. The order is: blacklist filter → model filter → per-provider mode filter; each logs how many mentions it
+skips per document.
+
+## Software Mention Validity Classifier
+
+The upstream extractor emits a large amount of junk alongside real software names: punctuation runs
+(`**** ****`), repeated-token tables (`d d d d`, `SM SM SM`), sentence fragments, and entity lists. The
+blacklist (exact-match) can't catch this open-ended garbage, so an optional **structural validity classifier**
+scores every mention name as valid/invalid.
+
+- **Model**: character n-gram TF-IDF + logistic regression (`scikit-learn`). Short-string, language-agnostic,
+  ~0.4 ms/mention, ROC-AUC ≈ 0.93 on held-out data. Shipped at `app/static/data/name_classifier.joblib`.
+- **Two stages, like the blacklist** — flag at ingestion, enforce at send:
+  - **Ingestion**: each mention is scored and stamped with `model_score` (P(valid), 0–1) and
+    `model_invalid` (`true` when `model_score < MODEL_FILTER_THRESHOLD`). No mention is dropped.
+  - **Notifications**: mentions flagged `model_invalid` are excluded from what is sent to HAL/SWH.
+- **Fully toggleable** via `MODEL_FILTER_ENABLED` (default `false`). The flag gates both stages: when off, the
+  model is never loaded, no scoring happens, and any previously stored `model_invalid` flags are ignored at
+  send time — so enabling/disabling is reversible without re-ingesting. `MODEL_FILTER_THRESHOLD` (default
+  `0.5`) tunes how aggressive the filter is (higher = cleaner output, but drops more borderline real names).
+- **Graceful degradation**: if the model file is missing or fails to load, a warning is logged once and no
+  mention is flagged — ingestion never breaks.
+
+```bash
+# Enable the model filter; drop mentions scoring below 0.6 as P(valid)
+MODEL_FILTER_ENABLED=true
+MODEL_FILTER_THRESHOLD=0.6
+```
+
+### Retraining / scoring (offline)
+
+The model and its labeled dataset are produced by scripts under `sandbox/`:
+
+| File | Purpose |
+|------|---------|
+| `sandbox/training_data.csv` | Labeled dataset (`name,label,source`) used to train the model |
+| `sandbox/train_classifier.py` | Train, evaluate (held-out metrics + operating-point table), and save the model |
+| `sandbox/score_mentions.py` | Score a full mentions CSV and report throughput |
+
+```bash
+# Retrain from sandbox/training_data.csv -> sandbox/name_classifier.joblib
+python sandbox/train_classifier.py
+
+# Try the saved model on individual names
+python sandbox/train_classifier.py --predict "ImageJ" "**** ***" "DESeq2 R"
+
+# Score an entire mentions CSV (adds SCORE + VALID columns)
+python sandbox/score_mentions.py --input path/to/DOC_SOFTWARE_MENTIONS.csv
+```
+
+After retraining, copy the new `sandbox/name_classifier.joblib` to `app/static/data/name_classifier.joblib`
+to ship it with the app. Re-running training over an updated `training_data.csv` is how you improve the model.
 
 ## Receiving notifications
 
