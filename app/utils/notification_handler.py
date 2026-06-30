@@ -38,6 +38,7 @@ class ProviderType(Enum):
 class NotificationFilterMode(Enum):
     """Filter modes restricting which software notifications get sent to a provider."""
 
+    NONE = "none"
     ALL = "all"
     CREATED = "created"
     USED = "used"
@@ -50,6 +51,9 @@ class NotificationFilterMode(Enum):
 # Each predicate receives the three aggregated booleans from get_software_notifications
 # and returns True if the software should be sent for this mode.
 _FILTER_PREDICATES = {
+    # 'none' disables a provider entirely: nothing passes, so no notifications
+    # are sent to it (e.g. SWH_NOTIFICATION_FILTER=none).
+    NotificationFilterMode.NONE: lambda created, used, shared: False,
     NotificationFilterMode.ALL: lambda created, used, shared: True,
     NotificationFilterMode.CREATED: lambda created, used, shared: created,
     NotificationFilterMode.USED: lambda created, used, shared: used,

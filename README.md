@@ -742,6 +742,7 @@ each set to one of the following modes:
 
 | Mode                 | Sends a notification when the software is…                          |
 |----------------------|---------------------------------------------------------------------|
+| `none`               | never — disables sending to that provider entirely                  |
 | `all` (default)      | always — no filtering                                               |
 | `created`            | marked as *created*                                                 |
 | `used`               | marked as *used*                                                    |
@@ -751,9 +752,9 @@ each set to one of the following modes:
 | `created_not_shared` | *created* but **not** *shared*                                      |
 
 ```bash
-# Send HAL only software the authors created; send everything to Software Heritage
+# Send HAL only software the authors created; disable Software Heritage entirely
 HAL_NOTIFICATION_FILTER=created
-SWH_NOTIFICATION_FILTER=all
+SWH_NOTIFICATION_FILTER=none
 ```
 
 Equivalent defaults in `config.json`:
