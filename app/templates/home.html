@@ -230,6 +230,8 @@
       <div class="chart-grid">
         <div class="chart-card"><canvas id="chart-documents"></canvas></div>
         <div class="chart-card"><canvas id="chart-software"></canvas></div>
+        <div class="chart-card"><canvas id="chart-blacklisted"></canvas></div>
+        <div class="chart-card"><canvas id="chart-model-invalid"></canvas></div>
         <div class="chart-card"><canvas id="chart-total"></canvas></div>
         <div class="chart-card"><canvas id="chart-accepted"></canvas></div>
         <div class="chart-card"><canvas id="chart-rejected"></canvas></div>
@@ -245,6 +247,7 @@
         <a href="{{ url_for('coar_inbox.show_notifications') }}">View received notifications</a>
       {% endif %}
       <a href="{{ url_for('blacklist_page') }}">Manage blacklist</a>
+      <a href="{{ url_for('mention_quality_page') }}">Mention Quality Filter</a>
       <a href="{{ url_for('database_info') }}">Database Info</a>
       <a href="https://github.com/Inria-Datalake/COAR-Notify-INRIA-HAL#readme"
          target="_blank" rel="noopener">Documentation</a>
@@ -293,6 +296,8 @@
 
     lineChart('chart-documents', 'Documents ingested', series.documents, '#6f42c1');
     lineChart('chart-software', 'Software mentions ingested', series.software, '#fd7e14');
+    lineChart('chart-blacklisted', 'Blacklisted mentions / day', series.blacklisted, '#c62828');
+    lineChart('chart-model-invalid', 'Quality-filtered mentions / day', series.model_invalid, '#b26a00');
     lineChart('chart-total', 'Notifications received', series.notifications, '#007bff');
     lineChart('chart-accepted', 'Accepted', series.accepted, '#2e7d32');
     lineChart('chart-rejected', 'Rejected', series.rejected, '#c62828');

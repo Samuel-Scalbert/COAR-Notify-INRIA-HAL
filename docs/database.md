@@ -107,8 +107,8 @@ ARANGO_ROOT_PASSWORD=examplepassword
 | `mentionContextAttributes` | object | Confidence scores at mention level | Yes |
 | `documentContextAttributes` | object | Confidence scores at document level | Yes |
 | `blacklisted` | boolean | Set at ingestion when the normalized name is on the blacklist; excludes the mention from notifications | No |
-| `model_score` | number\|null | P(valid) in [0,1] from the structural-validity classifier, set at ingestion when `MODEL_FILTER_ENABLED=true` (else `null`) | No |
-| `model_invalid` | boolean | `true` when `model_score` is below `MODEL_FILTER_THRESHOLD`; excludes the mention from notifications while the model filter is enabled | No |
+| `model_score` | number\|null | P(valid) in [0,1] from the structural-validity classifier, set at ingestion when `MENTION_QUALITY_FILTER_ENABLED=true` (else `null`) | No |
+| `model_invalid` | boolean | `true` when `model_score` is below `MENTION_QUALITY_FILTER_THRESHOLD`; excludes the mention from notifications while the Mention Quality Filter is enabled | No |
 | `verification_by_author` | boolean | Author verification status | No |
 | `created_at` | string | ISO-8601 UTC ingestion timestamp | No |
 
@@ -245,7 +245,7 @@ graph TD
     C -->|Yes| E[Skip Duplicate]
     D --> F[Process Mentions]
     F --> G[Flag against Blacklist]
-    G --> M[Score with classifier if MODEL_FILTER_ENABLED]
+    G --> M[Score with classifier if MENTION_QUALITY_FILTER_ENABLED]
     M --> H[Create Software Records (all, with blacklisted + model flags)]
     H --> I[Create Edge Relationships]
 ```
@@ -260,15 +260,20 @@ graph TD
 1. Software mentions are extracted from the `mentions` array
 2. Each mention is checked against the `blacklist` collection and stamped with `blacklisted: true|false`
    (no mention is dropped)
-3. When `MODEL_FILTER_ENABLED=true`, each mention is also scored by the structural-validity classifier
+3. When `MENTION_QUALITY_FILTER_ENABLED=true`, each mention is also scored by the structural-validity classifier
    and stamped with `model_score` and `model_invalid` (no mention is dropped). When disabled, both are unset.
 4. **All** mentions are stored in the `software` collection
 5. Field normalization occurs (`software-name` → `software_name`)
 
 Both signals are enforced later, when notifications are built: mentions flagged `blacklisted` (always) or
-`model_invalid` (only while the model filter is enabled) are excluded from what is sent to providers. The two
-filters are independent — see the [Software Mention Validity Classifier](../README.md#software-mention-validity-classifier)
+`model_invalid` (only while the Mention Quality Filter is enabled) are excluded from what is sent to providers.
+The two filters are independent — see the [Mention Quality Filter](../README.md#mention-quality-filter)
 section of the README.
+
+Both flags can be recomputed on already-stored mentions: `reapply_blacklist` (`POST /api/blacklist/reapply`)
+for the blacklist, and `reapply_mention_quality` (`POST /api/mention-quality/reapply`, with
+`GET /api/mention-quality/stats` and the `/mention-quality` web UI) for the Mention Quality Filter. Use the
+latter to backfill mentions ingested before the filter existed or to re-score after retraining.
 
 ### 3. Relationship Creation
 

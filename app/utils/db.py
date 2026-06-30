@@ -18,6 +18,29 @@ logger = logging.getLogger(__name__)
 # Global database manager instance
 db_manager: Union["DatabaseManager", None] = None
 
+# Legacy env names already warned about, so the deprecation notice is logged once
+# per process rather than on every ingestion.
+_warned_legacy_env: set[str] = set()
+
+
+def env_with_legacy(new_key: str, legacy_key: str, default: str) -> str:
+    """Read ``new_key`` from the environment, falling back to the deprecated
+    ``legacy_key`` (with a one-time warning) and finally ``default``.
+
+    Lets the Mention Quality Filter env vars be renamed without silently breaking
+    deployments that still set the old ``MODEL_FILTER_*`` names.
+    """
+    value = os.environ.get(new_key)
+    if value is not None:
+        return value
+    legacy = os.environ.get(legacy_key)
+    if legacy is not None:
+        if legacy_key not in _warned_legacy_env:
+            _warned_legacy_env.add(legacy_key)
+            logger.warning(f"Env var {legacy_key} is deprecated; use {new_key} instead.")
+        return legacy
+    return default
+
 
 class DatabaseManager:
     """
@@ -523,16 +546,12 @@ class DatabaseManager:
             # and filter_blacklisted_notifications).
             mentions = self.remove_duplicates(data_json.get("mentions", []))
             blacklist_filter = BlacklistFilter(blacklist)
-            # Structural validity model (see sandbox/train_classifier.py). Opt-in
-            # and tunable via env: MODEL_FILTER_ENABLED (default off) and
-            # MODEL_FILTER_THRESHOLD (default 0.5). Loaded once and reused for
-            # every mention; degrades gracefully if the model file is absent.
-            model_enabled = os.environ.get("MODEL_FILTER_ENABLED", "false").lower() in (
-                "1",
-                "true",
-                "yes",
-            )
-            model_threshold = float(os.environ.get("MODEL_FILTER_THRESHOLD", "0.4"))
+            # Mention Quality Filter model (see sandbox/train_classifier.py). Opt-in
+            # and tunable via env: MENTION_QUALITY_FILTER_ENABLED (default off) and
+            # MENTION_QUALITY_FILTER_THRESHOLD (default 0.4). Loaded once and reused
+            # for every mention; degrades gracefully if the model file is absent.
+            model_enabled = self._quality_enabled()
+            model_threshold = self._quality_threshold()
             classifier_filter = (
                 ClassifierFilter(threshold=model_threshold) if model_enabled else None
             )
@@ -659,6 +678,145 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to reapply blacklist: {e}")
             return {"updated": 0, "blacklisted": 0}
+
+    @staticmethod
+    def _quality_threshold() -> float:
+        """Active quality threshold, read from env like the ingestion path (db default 0.4)."""
+        return float(
+            env_with_legacy("MENTION_QUALITY_FILTER_THRESHOLD", "MODEL_FILTER_THRESHOLD", "0.4")
+        )
+
+    @staticmethod
+    def _quality_enabled() -> bool:
+        """Whether the quality flag is enforced at send time (MENTION_QUALITY_FILTER_ENABLED)."""
+        return env_with_legacy(
+            "MENTION_QUALITY_FILTER_ENABLED", "MODEL_FILTER_ENABLED", "false"
+        ).lower() in ("1", "true", "yes")
+
+    def get_mention_quality_stats(self) -> dict[str, Any]:
+        """
+        Read-only stats on the Mention Quality Filter flags across all mentions.
+
+        Reports how many stored software mentions have been scored
+        (``model_score`` present) and how many are currently flagged invalid,
+        plus the distinct-name count. The active ``threshold`` and ``enabled``
+        state are surfaced too, so the management page can show whether the flag
+        is actually enforced (it is only acted on at send time when
+        MENTION_QUALITY_FILTER_ENABLED is on). Mirrors count_software_matching_blacklist:
+        a failure (or cold, empty DB) yields zeros rather than raising.
+        """
+        stats: dict[str, Any] = {
+            "total_mentions": 0,
+            "scored": 0,
+            "model_invalid": 0,
+            "distinct_names": 0,
+            "threshold": self._quality_threshold(),
+            "enabled": self._quality_enabled(),
+        }
+        try:
+            query = """
+                RETURN {
+                    total_mentions: LENGTH(software),
+                    scored: LENGTH(FOR s IN software FILTER s.model_score != null RETURN 1),
+                    model_invalid: LENGTH(FOR s IN software FILTER s.model_invalid == true RETURN 1),
+                    distinct_names: LENGTH(
+                        FOR s IN software
+                            FILTER s.software_name.normalizedForm != null
+                            RETURN DISTINCT s.software_name.normalizedForm
+                    )
+                }
+            """
+            counts = list(self.execute_aql_query(query, raw_results=True))[0]
+            stats.update(counts)
+        except Exception as e:
+            logger.error(f"Failed to get mention quality stats: {e}")
+        return stats
+
+    def reapply_mention_quality(self, threshold: float | None = None) -> dict[str, int]:
+        """
+        Recompute ``model_score`` and ``model_invalid`` on every stored mention.
+
+        Backfills the structural-validity flags on mentions ingested before the
+        model existed (or while it was disabled), and re-scores everything when
+        the model is retrained. Because the classifier keys only off the
+        normalized name, distinct names are scored once (batched) and the result
+        is fanned back out to every mention in a single server-side AQL UPDATE.
+
+        The ``model_invalid`` formula matches the ingestion path exactly
+        (``score is not None and score < threshold``, see insert_document_as_json).
+        Flags are written unconditionally; enforcement stays gated by
+        MENTION_QUALITY_FILTER_ENABLED at send time. If the model file is unavailable the
+        call is a logged no-op rather than an error.
+
+        Args:
+            threshold: Override for the invalid cutoff; defaults to
+                MENTION_QUALITY_FILTER_THRESHOLD (0.4).
+
+        Returns:
+            Dict with ``updated`` (mentions touched), ``model_invalid`` (how many
+            ended up flagged), and ``distinct_scored`` (distinct names scored).
+        """
+        if threshold is None:
+            threshold = self._quality_threshold()
+
+        no_op = {"updated": 0, "model_invalid": 0, "distinct_scored": 0}
+        try:
+            # Reuse ClassifierFilter's cached, gracefully-degrading model loader.
+            classifier = ClassifierFilter(threshold=threshold)
+            pipe = classifier._pipeline()
+            if pipe is None:
+                logger.warning("reapply_mention_quality: model unavailable; no mentions updated.")
+                return no_op
+
+            names = list(
+                self.execute_aql_query(
+                    """
+                    FOR s IN software
+                        FILTER s.software_name.normalizedForm != null
+                        RETURN DISTINCT s.software_name.normalizedForm
+                    """,
+                    raw_results=True,
+                )
+            )
+            if not names:
+                return no_op
+
+            # Batch scoring is the production path (see sandbox/score_mentions.py):
+            # vectorize + predict in one shot. Column 1 is P(valid).
+            proba = pipe.predict_proba(names)[:, 1]
+            scores = {name: float(p) for name, p in zip(names, proba, strict=True)}
+
+            query = """
+                FOR s IN software
+                    LET nm = s.software_name.normalizedForm
+                    LET score = nm == null ? null : @scores[nm]
+                    UPDATE s WITH {
+                        model_score: score,
+                        model_invalid: score != null && score < @threshold
+                    } IN software
+                    RETURN NEW.model_invalid
+            """
+            flags = list(
+                self.execute_aql_query(
+                    query,
+                    bind_vars={"scores": scores, "threshold": threshold},
+                    raw_results=True,
+                )
+            )
+            result = {
+                "updated": len(flags),
+                "model_invalid": sum(1 for f in flags if f),
+                "distinct_scored": len(names),
+            }
+            logger.info(
+                f"Reapplied mention quality filter (threshold {threshold}): "
+                f"{result['model_invalid']} of {result['updated']} mentions flagged invalid "
+                f"({result['distinct_scored']} distinct names scored)"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Failed to reapply mention quality filter: {e}")
+            return no_op
 
     def update_software_with_author_validation(
         self, document_id: str, software_name: str, accepted: bool
@@ -820,8 +978,10 @@ class DatabaseManager:
         Daily activity counts for the last ``days`` days (default 30).
 
         Returns a dict with a ``labels`` list (one ``YYYY-MM-DD`` per day, oldest
-        first) and five equal-length series suitable for plotting:
-        ``documents`` and ``software`` (by ingestion ``created_at``), and
+        first) and seven equal-length series suitable for plotting:
+        ``documents`` and ``software`` (by ingestion ``created_at``),
+        ``blacklisted`` and ``model_invalid`` (software mentions flagged by the
+        blacklist / Mention Quality Filter, also by ``created_at``), and
         ``notifications`` / ``accepted`` / ``rejected`` (by ``received_at``).
         Days with no activity are zero-filled so the axis is continuous, like
         coar-viz's 30-day charts.
@@ -841,6 +1001,8 @@ class DatabaseManager:
             "labels": labels,
             "documents": [0] * days,
             "software": [0] * days,
+            "blacklisted": [0] * days,
+            "model_invalid": [0] * days,
             "notifications": [0] * days,
             "accepted": [0] * days,
             "rejected": [0] * days,
@@ -866,6 +1028,36 @@ class DatabaseManager:
                         result[series_key][i] = row["count"]
             except Exception as e:
                 logger.error(f"Failed to build {collection_name} timeseries: {e}")
+
+        # Software mentions flagged by the blacklist / Mention Quality Filter,
+        # by ingestion date — the daily "filter usage" histograms. Both counts
+        # come from one pass over software (like the accepted/rejected split).
+        try:
+            rows = self.execute_aql_query(
+                """
+                FOR s IN software
+                    FILTER s.created_at != null
+                        AND SUBSTRING(s.created_at, 0, 10) >= @since
+                    COLLECT day = SUBSTRING(s.created_at, 0, 10) INTO group = {
+                        blacklisted: s.blacklisted == true,
+                        model_invalid: s.model_invalid == true
+                    }
+                    RETURN {
+                        day: day,
+                        blacklisted: LENGTH(group[* FILTER CURRENT.blacklisted]),
+                        model_invalid: LENGTH(group[* FILTER CURRENT.model_invalid])
+                    }
+                """,
+                bind_vars={"since": since},
+                raw_results=True,
+            )
+            for row in rows:
+                i = index.get(row["day"])
+                if i is not None:
+                    result["blacklisted"][i] = row["blacklisted"]
+                    result["model_invalid"][i] = row["model_invalid"]
+        except Exception as e:
+            logger.error(f"Failed to build filter-usage timeseries: {e}")
 
         # Notifications received, with the accepted/rejected split, by received_at.
         try:
@@ -941,39 +1133,64 @@ class DatabaseManager:
             logger.error(f"Failed to get latest documents: {e}")
             return []
 
-    def get_latest_mentions(self, limit: int = 10) -> list[dict[str, Any]]:
+    def get_latest_mentions(
+        self,
+        limit: int = 10,
+        blacklisted: bool | None = None,
+        model_invalid: bool | None = None,
+    ) -> list[dict[str, Any]]:
         """
         The ``limit`` most recently ingested software mentions, newest first.
 
         Sorted by ``created_at`` like get_latest_documents. Returns the
-        normalized software name and ingestion timestamp, plus a ``context``
+        normalized software name and ingestion timestamp, the ``blacklisted`` /
+        ``model_invalid`` flags and the raw ``model_score``, plus a ``context``
         object with the created/used/shared characterization booleans. A mention
         whose softice output lacks ``mentionContextAttributes`` reports all three
         as ``false``.
+
+        Optional ``blacklisted`` / ``model_invalid`` filters narrow the result to
+        mentions with that flag set (``True``) or not set (``False``); ``None``
+        (the default) applies no filter. The not-set case uses ``!= true`` so
+        legacy mentions that predate a flag (stored as null) count as not-flagged,
+        matching how these flags are interpreted everywhere else.
         """
         try:
-            return list(
-                self.execute_aql_query(
-                    """
+            # Filter clauses are fixed literals selected by the boolean args (no
+            # user text is interpolated), like list_received_notifications.
+            filters = ["FILTER s.created_at != null"]
+            if blacklisted is not None:
+                filters.append(
+                    "FILTER s.blacklisted == true"
+                    if blacklisted
+                    else "FILTER s.blacklisted != true"
+                )
+            if model_invalid is not None:
+                filters.append(
+                    "FILTER s.model_invalid == true"
+                    if model_invalid
+                    else "FILTER s.model_invalid != true"
+                )
+            filter_clause = "\n                        ".join(filters)
+            query = f"""
                     FOR s IN software
-                        FILTER s.created_at != null
+                        {filter_clause}
                         SORT s.created_at DESC
                         LIMIT @limit
-                        RETURN {
+                        RETURN {{
                             name: s.software_name.normalizedForm,
                             created_at: s.created_at,
                             blacklisted: s.blacklisted == true,
-                            context: {
+                            model_invalid: s.model_invalid == true,
+                            model_score: s.model_score,
+                            context: {{
                                 created: s.mentionContextAttributes.created.value == true,
                                 used: s.mentionContextAttributes.used.value == true,
                                 shared: s.mentionContextAttributes.shared.value == true
-                            }
-                        }
-                    """,
-                    bind_vars={"limit": limit},
-                    raw_results=True,
-                )
-            )
+                            }}
+                        }}
+                    """
+            return list(self.execute_aql_query(query, bind_vars={"limit": limit}, raw_results=True))
         except Exception as e:
             logger.error(f"Failed to get latest mentions: {e}")
             return []

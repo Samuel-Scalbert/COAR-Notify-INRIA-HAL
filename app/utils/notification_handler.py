@@ -38,6 +38,7 @@ class ProviderType(Enum):
 class NotificationFilterMode(Enum):
     """Filter modes restricting which software notifications get sent to a provider."""
 
+    NONE = "none"
     ALL = "all"
     CREATED = "created"
     USED = "used"
@@ -50,6 +51,9 @@ class NotificationFilterMode(Enum):
 # Each predicate receives the three aggregated booleans from get_software_notifications
 # and returns True if the software should be sent for this mode.
 _FILTER_PREDICATES = {
+    # 'none' disables a provider entirely: nothing passes, so no notifications
+    # are sent to it (e.g. SWH_NOTIFICATION_FILTER=none).
+    NotificationFilterMode.NONE: lambda created, used, shared: False,
     NotificationFilterMode.ALL: lambda created, used, shared: True,
     NotificationFilterMode.CREATED: lambda created, used, shared: created,
     NotificationFilterMode.USED: lambda created, used, shared: used,
@@ -117,12 +121,12 @@ def filter_model_invalid_notifications(
 
     The 'model_invalid' flag is set per mention at ingestion (see
     ClassifierFilter) and aggregated by software name in
-    get_software_notifications. Gated by MODEL_FILTER_ENABLED so the model is a
-    fully toggleable feature: when off, stored flags are ignored and nothing
+    get_software_notifications. Gated by MENTION_QUALITY_FILTER_ENABLED so the
+    filter is fully toggleable: when off, stored flags are ignored and nothing
     extra is excluded. Invalid mentions are still stored; they are only excluded
     from outbound notifications.
     """
-    enabled = str(current_app.config.get("MODEL_FILTER_ENABLED", "false")).lower() in (
+    enabled = str(current_app.config.get("MENTION_QUALITY_FILTER_ENABLED", "false")).lower() in (
         "1",
         "true",
         "yes",

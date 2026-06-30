@@ -10,7 +10,7 @@ from app.routes.api_documents import api_documents_bp
 from app.routes.api_software import api_software_bp
 from app.routes.api_status import api_status_bp
 from app.routes.coar_inbox import coar_inbox_bp
-from app.utils.db import get_db, init_db
+from app.utils.db import env_with_legacy, get_db, init_db
 
 load_dotenv()
 
@@ -34,10 +34,15 @@ app.config["SW_VIZ_TOKEN"] = os.environ.get("SW_VIZ_TOKEN", "")
 app.config["HAL_NOTIFICATION_FILTER"] = os.environ.get("HAL_NOTIFICATION_FILTER", "all")
 app.config["SWH_NOTIFICATION_FILTER"] = os.environ.get("SWH_NOTIFICATION_FILTER", "all")
 
-# Structural validity classifier (scores software-mention names at ingestion).
-# Opt-in; threshold is the minimum P(valid) for a name to count as valid.
-app.config["MODEL_FILTER_ENABLED"] = os.environ.get("MODEL_FILTER_ENABLED", "false")
-app.config["MODEL_FILTER_THRESHOLD"] = os.environ.get("MODEL_FILTER_THRESHOLD", "0.4")
+# Mention Quality Filter (scores software-mention names at ingestion). Opt-in;
+# threshold is the minimum P(valid) for a name to count as valid. The deprecated
+# MODEL_FILTER_* env names are still honored as a fallback (see env_with_legacy).
+app.config["MENTION_QUALITY_FILTER_ENABLED"] = env_with_legacy(
+    "MENTION_QUALITY_FILTER_ENABLED", "MODEL_FILTER_ENABLED", "false"
+)
+app.config["MENTION_QUALITY_FILTER_THRESHOLD"] = env_with_legacy(
+    "MENTION_QUALITY_FILTER_THRESHOLD", "MODEL_FILTER_THRESHOLD", "0.4"
+)
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
@@ -119,6 +124,15 @@ def blacklist_page():
     """Render the blacklist management UI. Data is loaded client-side from /api/blacklist."""
     try:
         return render_template("blacklist.html")
+    except Exception as e:
+        return render_template("error.html", error=str(e))
+
+
+@app.get("/mention-quality")
+def mention_quality_page():
+    """Render the Mention Quality Filter UI. Data is loaded client-side from /api/mention-quality/stats."""
+    try:
+        return render_template("mention_quality.html")
     except Exception as e:
         return render_template("error.html", error=str(e))
 

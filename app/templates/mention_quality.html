@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COAR Notify INRIA HAL &middot; Mention Quality Filter</title>
+  <style>
+    :root {
+      --accent: #007bff;
+      --accent-dark: #0056b3;
+      --bg-soft: #f8f9fa;
+      --border: #e6e8eb;
+      --danger: #c62828;
+      --danger-soft: #ffebee;
+      --ok: #2e7d32;
+      --ok-soft: #e8f5e8;
+      --warn: #b26a00;
+      --warn-soft: #fff3e0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem auto;
+      line-height: 1.6;
+      max-width: 860px;
+      padding: 0 1rem;
+      color: #212529;
+    }
+    .header { border-bottom: 2px solid #eee; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+    .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+    .header-row h1 { margin: 0; }
+    .header-row p { margin: .25rem 0 0; color: #666; }
+    .back { color: var(--accent); text-decoration: none; font-size: .9rem; }
+    .back:hover { text-decoration: underline; }
+    .pill {
+      padding: .4rem .9rem; border-radius: 999px; font-weight: 600; white-space: nowrap;
+      background: var(--ok-soft); color: var(--ok); border: 1px solid #4caf50;
+    }
+    .pill.off { background: var(--warn-soft); color: var(--warn); border-color: #ffb74d; }
+    .card {
+      background: var(--bg-soft); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0;
+    }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+    .stat { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+    .stat .value { font-size: 1.8rem; font-weight: 700; color: #212529; line-height: 1.1; }
+    .stat .value.invalid { color: var(--danger); }
+    .stat .label { font-size: .8rem; color: #6c757d; margin-top: .25rem; }
+    button {
+      padding: .6rem 1.1rem; font-size: .95rem; font-weight: 600; cursor: pointer;
+      border-radius: 6px; border: 1px solid transparent; transition: background .15s, opacity .15s;
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
+    .btn-secondary { background: #fff; color: #495057; border-color: #ccd1d6; }
+    .btn-secondary:hover:not(:disabled) { background: #eef0f2; }
+    .actions { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+    .actions .note { color: #6c757d; font-size: .85rem; flex-basis: 100%; margin: 0; }
+
+    /* Toasts */
+    #toasts { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 50; }
+    .toast {
+      padding: .7rem 1rem; border-radius: 8px; color: #fff; font-size: .9rem; min-width: 220px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.18); animation: slidein .2s ease;
+    }
+    .toast.ok { background: #2e7d32; }
+    .toast.err { background: #c62828; }
+    .toast.info { background: #37474f; }
+    @keyframes slidein { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #eee; color: #999; font-size: .8rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-row">
+      <div>
+        <h1>Mention Quality Filter</h1>
+        <p>Scores every software-mention name and flags low-quality / junk mentions. Flagged
+           mentions are still ingested, but can be excluded from outbound notifications.</p>
+        <a class="back" href="{{ url_for('home') }}">&larr; Back to dashboard</a>
+      </div>
+      <div><span class="pill" id="enabled-pill">&hellip;</span></div>
+    </div>
+  </div>
+
+  <main>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="value" id="stat-total">&hellip;</div><div class="label">Total mentions</div></div>
+        <div class="stat"><div class="value" id="stat-scored">&hellip;</div><div class="label">Scored by model</div></div>
+        <div class="stat"><div class="value invalid" id="stat-invalid">&hellip;</div><div class="label">Flagged invalid</div></div>
+        <div class="stat"><div class="value" id="stat-distinct">&hellip;</div><div class="label">Distinct names</div></div>
+        <div class="stat"><div class="value" id="stat-threshold">&hellip;</div><div class="label">Threshold</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="actions">
+        <button class="btn-secondary" id="refresh-btn">Refresh stats</button>
+        <button class="btn-primary" id="reapply-btn">Re-run filter on all mentions</button>
+        <p class="note">
+          <strong>Re-run</strong> re-scores every stored mention with the current model and
+          rewrites the <code>model_score</code> / <code>model_invalid</code> flags. Use it to
+          backfill mentions ingested before the model existed, or after retraining the model.
+          New documents are scored at ingestion automatically. Flags are only excluded from
+          notifications when the filter is <strong>enabled</strong> (see the badge above).
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <div class="footer">COAR Notify INRIA HAL &middot; v{{ app_version }}</div>
+  <div id="toasts"></div>
+
+  <script>
+    // Flask-provided endpoint URLs (respect any reverse-proxy prefix).
+    const API = {
+      stats: "{{ url_for('api_software.mention_quality_stats') }}",
+      reapply: "{{ url_for('api_software.reapply_mention_quality') }}",
+    };
+
+    const el = {
+      enabledPill: document.getElementById('enabled-pill'),
+      total: document.getElementById('stat-total'),
+      scored: document.getElementById('stat-scored'),
+      invalid: document.getElementById('stat-invalid'),
+      distinct: document.getElementById('stat-distinct'),
+      threshold: document.getElementById('stat-threshold'),
+    };
+
+    function toast(message, kind = 'info') {
+      const t = document.createElement('div');
+      t.className = `toast ${kind}`;
+      t.textContent = message;
+      document.getElementById('toasts').appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
+    function num(n) { return (n ?? 0).toLocaleString(); }
+
+    function applyStats(data) {
+      el.total.textContent = num(data.total_mentions);
+      el.scored.textContent = num(data.scored);
+      el.invalid.textContent = num(data.model_invalid);
+      el.distinct.textContent = num(data.distinct_names);
+      el.threshold.textContent = (data.threshold ?? 0).toFixed(2);
+      if (data.enabled) {
+        el.enabledPill.textContent = 'Enforced';
+        el.enabledPill.classList.remove('off');
+        el.enabledPill.title = 'MODEL_FILTER_ENABLED is on: flagged mentions are excluded from notifications.';
+      } else {
+        el.enabledPill.textContent = 'Not enforced';
+        el.enabledPill.classList.add('off');
+        el.enabledPill.title = 'MODEL_FILTER_ENABLED is off: flags are stored but do not affect notifications.';
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const res = await fetch(API.stats);
+        const data = await res.json();
+        if (res.ok) {
+          applyStats(data);
+        } else {
+          toast(data.error || 'Failed to load stats.', 'err');
+        }
+      } catch (err) {
+        toast(`Error: ${err}`, 'err');
+      }
+    }
+
+    async function reapply() {
+      const btn = document.getElementById('reapply-btn');
+      if (!confirm('Re-score every stored mention with the current model now?')) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Re-running…';
+      try {
+        const res = await fetch(API.reapply, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          toast(`Re-applied: ${num(data.model_invalid)} of ${num(data.updated)} mentions flagged invalid.`, 'ok');
+          await loadStats();
+        } else {
+          toast(data.error || 'Re-run failed.', 'err');
+        }
+      } catch (err) {
+        toast(`Error: ${err}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+    document.getElementById('refresh-btn').addEventListener('click', loadStats);
+    document.getElementById('reapply-btn').addEventListener('click', reapply);
+
+    loadStats();
+  </script>
+</body>
+</html>
