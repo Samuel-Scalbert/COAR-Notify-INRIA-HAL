@@ -83,6 +83,8 @@ ARANGO_ROOT_PASSWORD=examplepassword
     "shared": {"value": false, "score": 1.0728836059570312e-06}
   },
   "blacklisted": false,
+  "model_score": 0.9381,
+  "model_invalid": false,
   "verification_by_author": false,
   "created_at": "2026-04-16T07:30:00.000000+00:00"
 }
@@ -105,6 +107,8 @@ ARANGO_ROOT_PASSWORD=examplepassword
 | `mentionContextAttributes` | object | Confidence scores at mention level | Yes |
 | `documentContextAttributes` | object | Confidence scores at document level | Yes |
 | `blacklisted` | boolean | Set at ingestion when the normalized name is on the blacklist; excludes the mention from notifications | No |
+| `model_score` | number\|null | P(valid) in [0,1] from the structural-validity classifier, set at ingestion when `MODEL_FILTER_ENABLED=true` (else `null`) | No |
+| `model_invalid` | boolean | `true` when `model_score` is below `MODEL_FILTER_THRESHOLD`; excludes the mention from notifications while the model filter is enabled | No |
 | `verification_by_author` | boolean | Author verification status | No |
 | `created_at` | string | ISO-8601 UTC ingestion timestamp | No |
 
@@ -241,7 +245,8 @@ graph TD
     C -->|Yes| E[Skip Duplicate]
     D --> F[Process Mentions]
     F --> G[Flag against Blacklist]
-    G --> H[Create Software Records (all, with blacklisted flag)]
+    G --> M[Score with classifier if MODEL_FILTER_ENABLED]
+    M --> H[Create Software Records (all, with blacklisted + model flags)]
     H --> I[Create Edge Relationships]
 ```
 
@@ -255,11 +260,15 @@ graph TD
 1. Software mentions are extracted from the `mentions` array
 2. Each mention is checked against the `blacklist` collection and stamped with `blacklisted: true|false`
    (no mention is dropped)
-3. **All** mentions are stored in the `software` collection
-4. Field normalization occurs (`software-name` → `software_name`)
+3. When `MODEL_FILTER_ENABLED=true`, each mention is also scored by the structural-validity classifier
+   and stamped with `model_score` and `model_invalid` (no mention is dropped). When disabled, both are unset.
+4. **All** mentions are stored in the `software` collection
+5. Field normalization occurs (`software-name` → `software_name`)
 
-The blacklist is enforced later, when notifications are built: mentions flagged `blacklisted` are excluded
-from what is sent to providers.
+Both signals are enforced later, when notifications are built: mentions flagged `blacklisted` (always) or
+`model_invalid` (only while the model filter is enabled) are excluded from what is sent to providers. The two
+filters are independent — see the [Software Mention Validity Classifier](../README.md#software-mention-validity-classifier)
+section of the README.
 
 ### 3. Relationship Creation
 

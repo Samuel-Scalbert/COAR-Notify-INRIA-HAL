@@ -108,6 +108,30 @@ def filter_blacklisted_notifications(
     return [n for n in notifications if not n.get("blacklisted")]
 
 
+def filter_model_invalid_notifications(
+    notifications: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Drop notifications the structural classifier flagged invalid — only when the
+    feature is enabled.
+
+    The 'model_invalid' flag is set per mention at ingestion (see
+    ClassifierFilter) and aggregated by software name in
+    get_software_notifications. Gated by MODEL_FILTER_ENABLED so the model is a
+    fully toggleable feature: when off, stored flags are ignored and nothing
+    extra is excluded. Invalid mentions are still stored; they are only excluded
+    from outbound notifications.
+    """
+    enabled = str(current_app.config.get("MODEL_FILTER_ENABLED", "false")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not enabled:
+        return notifications
+    return [n for n in notifications if not n.get("model_invalid")]
+
+
 class NotificationType(Enum):
     """Enumeration of notification types."""
 
@@ -328,6 +352,14 @@ def send_notifications_to_swh(document_id: str, notifications=None) -> dict[str,
                 f"SWH blacklist filter skipped {blacklisted} of {before_blacklist} software notifications for {document_id}"
             )
 
+        before_model = len(notifications)
+        notifications = filter_model_invalid_notifications(notifications)
+        model_skipped = before_model - len(notifications)
+        if model_skipped:
+            logger.info(
+                f"SWH model filter skipped {model_skipped} of {before_model} software notifications for {document_id}"
+            )
+
         filter_mode = current_app.config.get("SWH_NOTIFICATION_FILTER", "all")
         before_count = len(notifications)
         notifications = filter_notifications_by_mode(notifications, filter_mode)
@@ -432,6 +464,14 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> dict[str,
         if blacklisted:
             logger.info(
                 f"HAL blacklist filter skipped {blacklisted} of {before_blacklist} software notifications for {document_id}"
+            )
+
+        before_model = len(notifications)
+        notifications = filter_model_invalid_notifications(notifications)
+        model_skipped = before_model - len(notifications)
+        if model_skipped:
+            logger.info(
+                f"HAL model filter skipped {model_skipped} of {before_model} software notifications for {document_id}"
             )
 
         filter_mode = current_app.config.get("HAL_NOTIFICATION_FILTER", "all")
