@@ -978,8 +978,10 @@ class DatabaseManager:
         Daily activity counts for the last ``days`` days (default 30).
 
         Returns a dict with a ``labels`` list (one ``YYYY-MM-DD`` per day, oldest
-        first) and five equal-length series suitable for plotting:
-        ``documents`` and ``software`` (by ingestion ``created_at``), and
+        first) and seven equal-length series suitable for plotting:
+        ``documents`` and ``software`` (by ingestion ``created_at``),
+        ``blacklisted`` and ``model_invalid`` (software mentions flagged by the
+        blacklist / Mention Quality Filter, also by ``created_at``), and
         ``notifications`` / ``accepted`` / ``rejected`` (by ``received_at``).
         Days with no activity are zero-filled so the axis is continuous, like
         coar-viz's 30-day charts.
@@ -999,6 +1001,8 @@ class DatabaseManager:
             "labels": labels,
             "documents": [0] * days,
             "software": [0] * days,
+            "blacklisted": [0] * days,
+            "model_invalid": [0] * days,
             "notifications": [0] * days,
             "accepted": [0] * days,
             "rejected": [0] * days,
@@ -1024,6 +1028,36 @@ class DatabaseManager:
                         result[series_key][i] = row["count"]
             except Exception as e:
                 logger.error(f"Failed to build {collection_name} timeseries: {e}")
+
+        # Software mentions flagged by the blacklist / Mention Quality Filter,
+        # by ingestion date — the daily "filter usage" histograms. Both counts
+        # come from one pass over software (like the accepted/rejected split).
+        try:
+            rows = self.execute_aql_query(
+                """
+                FOR s IN software
+                    FILTER s.created_at != null
+                        AND SUBSTRING(s.created_at, 0, 10) >= @since
+                    COLLECT day = SUBSTRING(s.created_at, 0, 10) INTO group = {
+                        blacklisted: s.blacklisted == true,
+                        model_invalid: s.model_invalid == true
+                    }
+                    RETURN {
+                        day: day,
+                        blacklisted: LENGTH(group[* FILTER CURRENT.blacklisted]),
+                        model_invalid: LENGTH(group[* FILTER CURRENT.model_invalid])
+                    }
+                """,
+                bind_vars={"since": since},
+                raw_results=True,
+            )
+            for row in rows:
+                i = index.get(row["day"])
+                if i is not None:
+                    result["blacklisted"][i] = row["blacklisted"]
+                    result["model_invalid"][i] = row["model_invalid"]
+        except Exception as e:
+            logger.error(f"Failed to build filter-usage timeseries: {e}")
 
         # Notifications received, with the accepted/rejected split, by received_at.
         try:

@@ -230,6 +230,8 @@
       <div class="chart-grid">
         <div class="chart-card"><canvas id="chart-documents"></canvas></div>
         <div class="chart-card"><canvas id="chart-software"></canvas></div>
+        <div class="chart-card"><canvas id="chart-blacklisted"></canvas></div>
+        <div class="chart-card"><canvas id="chart-model-invalid"></canvas></div>
         <div class="chart-card"><canvas id="chart-total"></canvas></div>
         <div class="chart-card"><canvas id="chart-accepted"></canvas></div>
         <div class="chart-card"><canvas id="chart-rejected"></canvas></div>
@@ -292,8 +294,37 @@
       });
     }
 
+    // Bar histogram for the daily filter-usage counts (blacklist / quality filter).
+    function barChart(canvasId, title, data, color) {
+      const el = document.getElementById(canvasId);
+      if (!el) return;
+      new Chart(el, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: title,
+            data,
+            backgroundColor: color + 'cc',
+            borderColor: color,
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: {
+            x: { grid: { display: false } },
+            y: { beginAtZero: true, ticks: { precision: 0 } },
+          },
+        },
+      });
+    }
+
     lineChart('chart-documents', 'Documents ingested', series.documents, '#6f42c1');
     lineChart('chart-software', 'Software mentions ingested', series.software, '#fd7e14');
+    barChart('chart-blacklisted', 'Blacklisted mentions / day', series.blacklisted, '#c62828');
+    barChart('chart-model-invalid', 'Quality-filtered mentions / day', series.model_invalid, '#b26a00');
     lineChart('chart-total', 'Notifications received', series.notifications, '#007bff');
     lineChart('chart-accepted', 'Accepted', series.accepted, '#2e7d32');
     lineChart('chart-rejected', 'Rejected', series.rejected, '#c62828');
