@@ -26,24 +26,57 @@ def software_status():
         return jsonify({"error": "Failed to retrieve software status"}), 500
 
 
+def _parse_bool_arg(name: str) -> bool | None:
+    """Parse an optional tri-state boolean query param.
+
+    Returns None when the param is absent or unrecognized (so the filter is
+    skipped), True for true/1/yes/on, False for false/0/no/off.
+    """
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    v = raw.strip().lower()
+    if v in ("true", "1", "yes", "on"):
+        return True
+    if v in ("false", "0", "no", "off"):
+        return False
+    return None
+
+
 @api_software_bp.route("/api/software/latest", methods=["GET"])
 def latest_software():
     """
     Return the most recently ingested software mentions, newest first.
 
-    Each mention includes a ``context`` object with the created/used/shared
-    characterization booleans.
+    Each mention includes the ``blacklisted`` / ``model_invalid`` flags, the
+    ``model_score`` (P(valid), or null when not scored), and a ``context``
+    object with the created/used/shared characterization booleans.
 
-    Query param ``limit`` (1-100, default 10) controls how many are returned.
+    Query params:
+      - ``limit`` (1-100, default 10): how many to return.
+      - ``blacklisted`` (true/false): keep only blacklisted / non-blacklisted mentions.
+      - ``model_invalid`` (true/false): keep only model-invalid / model-valid mentions.
+
     Public (no API key) so it can be linked directly from the dashboard. This
     static rule is matched ahead of ``/api/software/<id_mention>`` by Werkzeug,
     so "latest" is never treated as a mention id.
     """
     limit = request.args.get("limit", default=10, type=int) or 10
     limit = max(1, min(limit, 100))
+    blacklisted = _parse_bool_arg("blacklisted")
+    model_invalid = _parse_bool_arg("model_invalid")
     try:
-        mentions = get_db().get_latest_mentions(limit=limit)
-        return jsonify({"count": len(mentions), "limit": limit, "mentions": mentions})
+        mentions = get_db().get_latest_mentions(
+            limit=limit, blacklisted=blacklisted, model_invalid=model_invalid
+        )
+        return jsonify(
+            {
+                "count": len(mentions),
+                "limit": limit,
+                "filters": {"blacklisted": blacklisted, "model_invalid": model_invalid},
+                "mentions": mentions,
+            }
+        )
     except Exception as e:
         logger.error(f"Failed to get latest software mentions: {e}")
         return jsonify({"error": "Failed to retrieve latest software mentions"}), 500
@@ -217,35 +250,35 @@ def reapply_blacklist():
         return jsonify({"error": "Failed to reapply blacklist"}), 500
 
 
-@api_software_bp.route("/api/model/stats", methods=["GET"])
-def model_filter_stats():
+@api_software_bp.route("/api/mention-quality/stats", methods=["GET"])
+def mention_quality_stats():
     """
-    Read-only: how the structural-validity model flags currently stand.
+    Read-only: how the Mention Quality Filter flags currently stand.
 
     Returns total mentions, how many have been scored, how many are flagged
     invalid, the distinct-name count, and the active threshold / enabled state.
     Does not modify any data (unlike reapply).
     """
     try:
-        return jsonify(get_db().get_model_filter_stats())
+        return jsonify(get_db().get_mention_quality_stats())
     except Exception as e:
-        logger.error(f"Failed to get model filter stats: {e}")
-        return jsonify({"error": "Failed to retrieve model filter stats"}), 500
+        logger.error(f"Failed to get mention quality stats: {e}")
+        return jsonify({"error": "Failed to retrieve mention quality stats"}), 500
 
 
-@api_software_bp.route("/api/model/reapply", methods=["POST"])
-def reapply_model_filter():
+@api_software_bp.route("/api/mention-quality/reapply", methods=["POST"])
+def reapply_mention_quality():
     """
     Re-score every stored software mention with the current model and rewrite the
     ``model_score`` / ``model_invalid`` flags. Use this to backfill mentions
     ingested before the model existed and to propagate a retrained model.
     """
     try:
-        result = get_db().reapply_model_filter()
+        result = get_db().reapply_mention_quality()
         return jsonify({"status": "reapplied", **result})
     except Exception as e:
-        logger.error(f"Failed to reapply model filter: {e}")
-        return jsonify({"error": "Failed to reapply model filter"}), 500
+        logger.error(f"Failed to reapply mention quality filter: {e}")
+        return jsonify({"error": "Failed to reapply mention quality filter"}), 500
 
 
 @api_software_bp.route("/api/blacklist/export", methods=["GET"])

@@ -1,8 +1,7 @@
-# Software Mention Validity Classifier — Training & Validation
+# Mention Quality Filter — Model Training & Validation
 
-This page documents how the structural validity classifier (the model behind
-`MODEL_FILTER_ENABLED`, see the [README](../README.md#software-mention-validity-classifier))
-was built and evaluated: the labeling methodology, the model, the validation
+This page documents how the model behind the [Mention Quality Filter](../README.md#mention-quality-filter)
+(`MENTION_QUALITY_FILTER_ENABLED`) was built and evaluated: the labeling methodology, the model, the validation
 protocol, and the measured accuracy and throughput.
 
 > All metrics below were measured locally on the development machine (single
@@ -193,8 +192,8 @@ share of the test set predicted valid.
 | 0.90               | 0.983   | 0.431   | 0.599    | 0.548      | 0.573     | 32.3%     |
 
 **Macro-F1 peaks at threshold ≈ 0.40 (0.847)**, marginally above 0.50 (0.841), so
-`MODEL_FILTER_THRESHOLD` defaults to 0.40 (F1-optimal). Use
-a higher `MODEL_FILTER_THRESHOLD` for cleaner output (higher valid precision, more
+`MENTION_QUALITY_FILTER_THRESHOLD` defaults to 0.40 (F1-optimal). Use
+a higher `MENTION_QUALITY_FILTER_THRESHOLD` for cleaner output (higher valid precision, more
 junk caught) at the cost of dropping more borderline real names; the valid-F1 and
 macro-F1 columns show where that trade-off stops paying off (both fall steadily
 above 0.6).
@@ -230,21 +229,21 @@ tools — e.g. `ImageJ` — recur thousands of times and dominate the row count.
 
 ### Applying to the stored corpus (backfill / re-score)
 
-New mentions are scored automatically at ingestion (when `MODEL_FILTER_ENABLED`
-is on). To populate the flags on mentions ingested **before** the model existed
-— or to re-score everything after retraining — use the **Model filter** page at
-`/model-filter` (linked from the dashboard), or its API directly:
+New mentions are scored automatically at ingestion (when `MENTION_QUALITY_FILTER_ENABLED`
+is on). To populate the flags on mentions ingested **before** the filter existed
+— or to re-score everything after retraining — use the **Mention Quality Filter**
+page at `/mention-quality` (linked from the dashboard), or its API directly:
 
-| Method & path           | Effect                                                                 |
-|-------------------------|------------------------------------------------------------------------|
-| `GET /api/model/stats`  | Read-only: total mentions, how many are scored, how many flagged invalid, distinct names, active threshold, and whether enforcement is on. |
-| `POST /api/model/reapply` | Re-scores every stored mention and rewrites `model_score` / `model_invalid` at `MODEL_FILTER_THRESHOLD` (default 0.4). |
+| Method & path                      | Effect                                                      |
+|------------------------------------|-------------------------------------------------------------|
+| `GET /api/mention-quality/stats`   | Read-only: total mentions, how many are scored, how many flagged invalid, distinct names, active threshold, and whether enforcement is on. |
+| `POST /api/mention-quality/reapply` | Re-scores every stored mention and rewrites `model_score` / `model_invalid` at `MENTION_QUALITY_FILTER_THRESHOLD` (default 0.4). |
 
 `reapply` scores the **distinct** names once (batched — see §7) and fans the
 results back to every mention in a single server-side AQL `UPDATE`. It is
 idempotent for a fixed model+threshold and degrades to a logged no-op if the
 model file is unavailable. Flags are always written; they only affect outbound
-notifications while `MODEL_FILTER_ENABLED` is on. This mirrors the blacklist's
+notifications while `MENTION_QUALITY_FILTER_ENABLED` is on. This mirrors the blacklist's
 `POST /api/blacklist/reapply`.
 
 ---
@@ -258,7 +257,7 @@ notifications while `MODEL_FILTER_ENABLED` is on. This mirrors the blacklist's
 - **Label provenance is mostly LLM** (Sonnet), validated against a 180-row human
   seed at 90% agreement, not a large independent human test set.
 - **Policy is structural**, so genuinely novel but oddly-formatted real tools can
-  be scored invalid; tune `MODEL_FILTER_THRESHOLD` down to be more permissive.
+  be scored invalid; tune `MENTION_QUALITY_FILTER_THRESHOLD` down to be more permissive.
 
 ---
 

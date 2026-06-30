@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>COAR Notify INRIA HAL &middot; Model filter</title>
+  <title>COAR Notify INRIA HAL &middot; Mention Quality Filter</title>
   <style>
     :root {
       --accent: #007bff;
@@ -75,9 +75,9 @@
   <div class="header">
     <div class="header-row">
       <div>
-        <h1>Model filter</h1>
-        <p>The structural-validity classifier scores every software name. Low-scoring
-           mentions are still ingested, but flagged so they can be excluded from outbound notifications.</p>
+        <h1>Mention Quality Filter</h1>
+        <p>Scores every software-mention name and flags low-quality / junk mentions. Flagged
+           mentions are still ingested, but can be excluded from outbound notifications.</p>
         <a class="back" href="{{ url_for('home') }}">&larr; Back to dashboard</a>
       </div>
       <div><span class="pill" id="enabled-pill">&hellip;</span></div>
@@ -116,8 +116,8 @@
   <script>
     // Flask-provided endpoint URLs (respect any reverse-proxy prefix).
     const API = {
-      stats: "{{ url_for('api_software.model_filter_stats') }}",
-      reapply: "{{ url_for('api_software.reapply_model_filter') }}",
+      stats: "{{ url_for('api_software.mention_quality_stats') }}",
+      reapply: "{{ url_for('api_software.reapply_mention_quality') }}",
     };
 
     const el = {
