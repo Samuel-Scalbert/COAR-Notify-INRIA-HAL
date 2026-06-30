@@ -228,6 +228,25 @@ Scoring all 51,634 mention rows at threshold 0.5:
 (The valid share is higher than the 73.7% unique-name rate because popular real
 tools — e.g. `ImageJ` — recur thousands of times and dominate the row count.)
 
+### Applying to the stored corpus (backfill / re-score)
+
+New mentions are scored automatically at ingestion (when `MODEL_FILTER_ENABLED`
+is on). To populate the flags on mentions ingested **before** the model existed
+— or to re-score everything after retraining — use the **Model filter** page at
+`/model-filter` (linked from the dashboard), or its API directly:
+
+| Method & path           | Effect                                                                 |
+|-------------------------|------------------------------------------------------------------------|
+| `GET /api/model/stats`  | Read-only: total mentions, how many are scored, how many flagged invalid, distinct names, active threshold, and whether enforcement is on. |
+| `POST /api/model/reapply` | Re-scores every stored mention and rewrites `model_score` / `model_invalid` at `MODEL_FILTER_THRESHOLD` (default 0.4). |
+
+`reapply` scores the **distinct** names once (batched — see §7) and fans the
+results back to every mention in a single server-side AQL `UPDATE`. It is
+idempotent for a fixed model+threshold and degrades to a logged no-op if the
+model file is unavailable. Flags are always written; they only affect outbound
+notifications while `MODEL_FILTER_ENABLED` is on. This mirrors the blacklist's
+`POST /api/blacklist/reapply`.
+
 ---
 
 ## 9. Known limitations

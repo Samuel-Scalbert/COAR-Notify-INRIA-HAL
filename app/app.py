@@ -123,6 +123,15 @@ def blacklist_page():
         return render_template("error.html", error=str(e))
 
 
+@app.get("/model-filter")
+def model_filter_page():
+    """Render the model-filter UI. Data is loaded client-side from /api/model/stats."""
+    try:
+        return render_template("model_filter.html")
+    except Exception as e:
+        return render_template("error.html", error=str(e))
+
+
 @app.get("/health")
 def health():
     try:

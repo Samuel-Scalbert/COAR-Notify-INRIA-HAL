@@ -270,6 +270,11 @@ Both signals are enforced later, when notifications are built: mentions flagged 
 filters are independent — see the [Software Mention Validity Classifier](../README.md#software-mention-validity-classifier)
 section of the README.
 
+Both flags can be recomputed on already-stored mentions: `reapply_blacklist` (`POST /api/blacklist/reapply`)
+for the blacklist, and `reapply_model_filter` (`POST /api/model/reapply`, with `GET /api/model/stats` and the
+`/model-filter` web UI) for the classifier. Use the latter to backfill mentions ingested before the model
+existed or to re-score after retraining.
+
 ### 3. Relationship Creation
 
 1. For each software mention, an edge is created

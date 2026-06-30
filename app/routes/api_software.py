@@ -217,6 +217,37 @@ def reapply_blacklist():
         return jsonify({"error": "Failed to reapply blacklist"}), 500
 
 
+@api_software_bp.route("/api/model/stats", methods=["GET"])
+def model_filter_stats():
+    """
+    Read-only: how the structural-validity model flags currently stand.
+
+    Returns total mentions, how many have been scored, how many are flagged
+    invalid, the distinct-name count, and the active threshold / enabled state.
+    Does not modify any data (unlike reapply).
+    """
+    try:
+        return jsonify(get_db().get_model_filter_stats())
+    except Exception as e:
+        logger.error(f"Failed to get model filter stats: {e}")
+        return jsonify({"error": "Failed to retrieve model filter stats"}), 500
+
+
+@api_software_bp.route("/api/model/reapply", methods=["POST"])
+def reapply_model_filter():
+    """
+    Re-score every stored software mention with the current model and rewrite the
+    ``model_score`` / ``model_invalid`` flags. Use this to backfill mentions
+    ingested before the model existed and to propagate a retrained model.
+    """
+    try:
+        result = get_db().reapply_model_filter()
+        return jsonify({"status": "reapplied", **result})
+    except Exception as e:
+        logger.error(f"Failed to reapply model filter: {e}")
+        return jsonify({"error": "Failed to reapply model filter"}), 500
+
+
 @api_software_bp.route("/api/blacklist/export", methods=["GET"])
 def export_blacklist():
     try:

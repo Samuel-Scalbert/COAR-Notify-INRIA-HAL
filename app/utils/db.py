@@ -660,6 +660,141 @@ class DatabaseManager:
             logger.error(f"Failed to reapply blacklist: {e}")
             return {"updated": 0, "blacklisted": 0}
 
+    @staticmethod
+    def _model_threshold() -> float:
+        """Active model threshold, read from env like the ingestion path (db default 0.4)."""
+        return float(os.environ.get("MODEL_FILTER_THRESHOLD", "0.4"))
+
+    @staticmethod
+    def _model_enabled() -> bool:
+        """Whether the model flag is enforced at send time (MODEL_FILTER_ENABLED)."""
+        return os.environ.get("MODEL_FILTER_ENABLED", "false").lower() in ("1", "true", "yes")
+
+    def get_model_filter_stats(self) -> dict[str, Any]:
+        """
+        Read-only stats on the structural-validity model flags across all mentions.
+
+        Reports how many stored software mentions have been scored
+        (``model_score`` present) and how many are currently flagged invalid,
+        plus the distinct-name count. The active ``threshold`` and ``enabled``
+        state are surfaced too, so the management page can show whether the flag
+        is actually enforced (it is only acted on at send time when
+        MODEL_FILTER_ENABLED is on). Mirrors count_software_matching_blacklist:
+        a failure (or cold, empty DB) yields zeros rather than raising.
+        """
+        stats: dict[str, Any] = {
+            "total_mentions": 0,
+            "scored": 0,
+            "model_invalid": 0,
+            "distinct_names": 0,
+            "threshold": self._model_threshold(),
+            "enabled": self._model_enabled(),
+        }
+        try:
+            query = """
+                RETURN {
+                    total_mentions: LENGTH(software),
+                    scored: LENGTH(FOR s IN software FILTER s.model_score != null RETURN 1),
+                    model_invalid: LENGTH(FOR s IN software FILTER s.model_invalid == true RETURN 1),
+                    distinct_names: LENGTH(
+                        FOR s IN software
+                            FILTER s.software_name.normalizedForm != null
+                            RETURN DISTINCT s.software_name.normalizedForm
+                    )
+                }
+            """
+            counts = list(self.execute_aql_query(query, raw_results=True))[0]
+            stats.update(counts)
+        except Exception as e:
+            logger.error(f"Failed to get model filter stats: {e}")
+        return stats
+
+    def reapply_model_filter(self, threshold: float | None = None) -> dict[str, int]:
+        """
+        Recompute ``model_score`` and ``model_invalid`` on every stored mention.
+
+        Backfills the structural-validity flags on mentions ingested before the
+        model existed (or while it was disabled), and re-scores everything when
+        the model is retrained. Because the classifier keys only off the
+        normalized name, distinct names are scored once (batched) and the result
+        is fanned back out to every mention in a single server-side AQL UPDATE.
+
+        The ``model_invalid`` formula matches the ingestion path exactly
+        (``score is not None and score < threshold``, see insert_document_as_json).
+        Flags are written unconditionally; enforcement stays gated by
+        MODEL_FILTER_ENABLED at send time. If the model file is unavailable the
+        call is a logged no-op rather than an error.
+
+        Args:
+            threshold: Override for the invalid cutoff; defaults to
+                MODEL_FILTER_THRESHOLD (0.4).
+
+        Returns:
+            Dict with ``updated`` (mentions touched), ``model_invalid`` (how many
+            ended up flagged), and ``distinct_scored`` (distinct names scored).
+        """
+        if threshold is None:
+            threshold = self._model_threshold()
+
+        no_op = {"updated": 0, "model_invalid": 0, "distinct_scored": 0}
+        try:
+            # Reuse ClassifierFilter's cached, gracefully-degrading model loader.
+            classifier = ClassifierFilter(threshold=threshold)
+            pipe = classifier._pipeline()
+            if pipe is None:
+                logger.warning("reapply_model_filter: model unavailable; no mentions updated.")
+                return no_op
+
+            names = list(
+                self.execute_aql_query(
+                    """
+                    FOR s IN software
+                        FILTER s.software_name.normalizedForm != null
+                        RETURN DISTINCT s.software_name.normalizedForm
+                    """,
+                    raw_results=True,
+                )
+            )
+            if not names:
+                return no_op
+
+            # Batch scoring is the production path (see sandbox/score_mentions.py):
+            # vectorize + predict in one shot. Column 1 is P(valid).
+            proba = pipe.predict_proba(names)[:, 1]
+            scores = {name: float(p) for name, p in zip(names, proba, strict=True)}
+
+            query = """
+                FOR s IN software
+                    LET nm = s.software_name.normalizedForm
+                    LET score = nm == null ? null : @scores[nm]
+                    UPDATE s WITH {
+                        model_score: score,
+                        model_invalid: score != null && score < @threshold
+                    } IN software
+                    RETURN NEW.model_invalid
+            """
+            flags = list(
+                self.execute_aql_query(
+                    query,
+                    bind_vars={"scores": scores, "threshold": threshold},
+                    raw_results=True,
+                )
+            )
+            result = {
+                "updated": len(flags),
+                "model_invalid": sum(1 for f in flags if f),
+                "distinct_scored": len(names),
+            }
+            logger.info(
+                f"Reapplied model filter (threshold {threshold}): "
+                f"{result['model_invalid']} of {result['updated']} mentions flagged invalid "
+                f"({result['distinct_scored']} distinct names scored)"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Failed to reapply model filter: {e}")
+            return no_op
+
     def update_software_with_author_validation(
         self, document_id: str, software_name: str, accepted: bool
     ) -> bool:
