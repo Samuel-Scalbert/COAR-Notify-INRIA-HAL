@@ -111,7 +111,7 @@ FLASK_PORT=5000
   [Notification Filtering](#notification-filtering)
 - `MODEL_FILTER_ENABLED`: Enable the structural validity classifier (default: `false`); see
   [Software Mention Validity Classifier](#software-mention-validity-classifier)
-- `MODEL_FILTER_THRESHOLD`: Minimum `model_score` (P(valid)) for a name to count as valid (default: `0.5`)
+- `MODEL_FILTER_THRESHOLD`: Minimum `model_score` (P(valid)) for a name to count as valid (default: `0.4`)
 
 ## Database Schema
 
@@ -749,7 +749,7 @@ scores every mention name as valid/invalid.
 - **Fully toggleable** via `MODEL_FILTER_ENABLED` (default `false`). The flag gates both stages: when off, the
   model is never loaded, no scoring happens, and any previously stored `model_invalid` flags are ignored at
   send time — so enabling/disabling is reversible without re-ingesting. `MODEL_FILTER_THRESHOLD` (default
-  `0.5`) tunes how aggressive the filter is (higher = cleaner output, but drops more borderline real names).
+  `0.4`, F1-optimal) tunes how aggressive the filter is (higher = cleaner output, but drops more borderline real names).
 - **Graceful degradation**: if the model file is missing or fails to load, a warning is logged once and no
   mention is flagged — ingestion never breaks.
 

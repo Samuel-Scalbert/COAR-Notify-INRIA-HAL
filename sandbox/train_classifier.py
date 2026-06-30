@@ -2,10 +2,17 @@
 
 Features: character n-grams (TF-IDF, word-boundary aware) — language-agnostic and
 well suited to short strings, capturing both character distribution (garbage) and
-subword/morpheme patterns (real names). Model: logistic regression.
+subword/morpheme patterns (real names). Model: logistic regression (default) or
+random forest, selectable via --model.
+
+To compare two models, run training/eval once per model and compare the printed
+metrics (the model name is shown in the output header):
+    python sandbox/train_classifier.py --model logreg
+    python sandbox/train_classifier.py --model rf
 
 Usage:
-    python sandbox/train_classifier.py            # train, evaluate, save model
+    python sandbox/train_classifier.py                 # train logreg, evaluate, save
+    python sandbox/train_classifier.py --model rf      # train random forest, evaluate, save
     python sandbox/train_classifier.py --predict "ImageJ" "**** ***" "DESeq2 R"
 """
 
@@ -30,37 +37,55 @@ def load(path):
     return names, labels
 
 
-def build_pipeline():
-    """char_wb (2..5) n-grams + logistic regression. Imported lazily so --predict is cheap."""
+MODELS = ("logreg", "rf")
+
+
+def build_pipeline(model_type="logreg"):
+    """char_wb (2..5) n-grams + a classifier. Imported lazily so --predict is cheap.
+
+    The TF-IDF feature step is identical across models so the saved Pipeline stays
+    interchangeable for the consumer code, which only relies on predict_proba.
+    """
     from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
 
-    return Pipeline(
-        [
-            (
-                "tfidf",
-                TfidfVectorizer(
-                    analyzer="char_wb",
-                    ngram_range=(2, 5),
-                    min_df=2,
-                    sublinear_tf=True,
-                    lowercase=False,  # case carries signal: "ImageJ" vs "image j"
-                ),
-            ),
-            (
-                "clf",
-                LogisticRegression(
-                    class_weight="balanced",  # offset 74/26 imbalance
-                    max_iter=2000,
-                    C=4.0,
-                ),
-            ),
-        ]
+    vectorizer = TfidfVectorizer(
+        analyzer="char_wb",
+        ngram_range=(2, 5),
+        min_df=2,
+        sublinear_tf=True,
+        lowercase=False,  # case carries signal: "ImageJ" vs "image j"
     )
 
+    if model_type == "logreg":
+        from sklearn.linear_model import LogisticRegression
 
-def train():
+        clf = LogisticRegression(
+            class_weight="balanced",  # offset 74/26 imbalance
+            max_iter=2000,
+            C=4.0,
+        )
+    elif model_type == "rf":
+        from sklearn.ensemble import RandomForestClassifier
+
+        # Trees on sparse high-dim char-ngram TF-IDF: many estimators help, and a
+        # min_samples_leaf floor curbs overfitting to rare n-grams. n_jobs is bounded
+        # (not -1) because cross_val_score already parallelises across folds, so
+        # nesting -1 here would oversubscribe cores.
+        clf = RandomForestClassifier(
+            n_estimators=400,
+            min_samples_leaf=2,
+            class_weight="balanced",  # offset 74/26 imbalance
+            n_jobs=2,
+            random_state=42,
+        )
+    else:
+        raise ValueError(f"unknown model_type {model_type!r}; choose from {MODELS}")
+
+    return Pipeline([("tfidf", vectorizer), ("clf", clf)])
+
+
+def train(model_type="logreg"):
     from sklearn.metrics import (
         balanced_accuracy_score,
         classification_report,
@@ -71,12 +96,15 @@ def train():
     from sklearn.model_selection import cross_val_score, train_test_split
 
     names, labels = load(DATA)
-    print(f"loaded {len(names)} examples — valid={sum(labels)} invalid={len(labels) - sum(labels)}")
+    print(
+        f"model={model_type} — loaded {len(names)} examples — "
+        f"valid={sum(labels)} invalid={len(labels) - sum(labels)}"
+    )
 
     Xtr, Xte, ytr, yte = train_test_split(
         names, labels, test_size=0.2, stratify=labels, random_state=42
     )
-    pipe = build_pipeline()
+    pipe = build_pipeline(model_type)
 
     # Quick 5-fold CV (macro-F1) on the training split for a stability estimate.
     cv = cross_val_score(pipe, Xtr, ytr, cv=5, scoring="f1_macro", n_jobs=-1)
@@ -89,7 +117,7 @@ def train():
     # Classes are imbalanced, so lead with macro-F1 / balanced accuracy (per-class
     # precision/recall/F1 below) rather than plain accuracy, which is inflated by
     # the majority class (an always-"valid" baseline already scores ~0.74).
-    print("\n=== held-out test (threshold 0.5) ===")
+    print(f"\n=== held-out test (model={model_type}, threshold 0.5) ===")
     print(
         f"PRIMARY (imbalance-robust): macro-F1={f1_score(yte, pred, average='macro'):.3f}  "
         f"balanced-accuracy={balanced_accuracy_score(yte, pred):.3f}  "
@@ -141,12 +169,18 @@ def predict(items):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--model",
+        choices=MODELS,
+        default="logreg",
+        help="Classifier to train/evaluate/save (default: logreg).",
+    )
     ap.add_argument("--predict", nargs="+", help="Classify the given name strings using the saved model.")
     args = ap.parse_args()
     if args.predict:
         predict(args.predict)
     else:
-        train()
+        train(args.model)
 
 
 if __name__ == "__main__":

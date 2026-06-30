@@ -186,14 +186,14 @@ share of the test set predicted valid.
 |--------------------|---------|---------|----------|------------|-----------|-----------|
 | 0.30               | 0.893   | 0.958   | 0.924    | 0.755      | 0.840     | 79.1%     |
 | **0.40** (best F1) | 0.911   | 0.934   | 0.922    | **0.771**  | **0.847** | 75.6%     |
-| 0.50 (default)     | 0.924   | 0.905   | 0.914    | 0.769      | 0.841     | 72.1%     |
+| 0.50               | 0.924   | 0.905   | 0.914    | 0.769      | 0.841     | 72.1%     |
 | 0.60               | 0.940   | 0.863   | 0.900    | 0.758      | 0.829     | 67.6%     |
 | 0.70               | 0.954   | 0.795   | 0.867    | 0.723      | 0.795     | 61.4%     |
 | 0.80               | 0.968   | 0.674   | 0.794    | 0.658      | 0.726     | 51.3%     |
 | 0.90               | 0.983   | 0.431   | 0.599    | 0.548      | 0.573     | 32.3%     |
 
-**Macro-F1 peaks at threshold ≈ 0.40 (0.847)**, marginally above the 0.50 default
-(0.841) — the model is well-calibrated, so the default is close to F1-optimal. Use
+**Macro-F1 peaks at threshold ≈ 0.40 (0.847)**, marginally above 0.50 (0.841), so
+`MODEL_FILTER_THRESHOLD` defaults to 0.40 (F1-optimal). Use
 a higher `MODEL_FILTER_THRESHOLD` for cleaner output (higher valid precision, more
 junk caught) at the cost of dropping more borderline real names; the valid-F1 and
 macro-F1 columns show where that trade-off stops paying off (both fall steadily

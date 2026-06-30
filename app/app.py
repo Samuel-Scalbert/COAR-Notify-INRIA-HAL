@@ -37,7 +37,7 @@ app.config["SWH_NOTIFICATION_FILTER"] = os.environ.get("SWH_NOTIFICATION_FILTER"
 # Structural validity classifier (scores software-mention names at ingestion).
 # Opt-in; threshold is the minimum P(valid) for a name to count as valid.
 app.config["MODEL_FILTER_ENABLED"] = os.environ.get("MODEL_FILTER_ENABLED", "false")
-app.config["MODEL_FILTER_THRESHOLD"] = os.environ.get("MODEL_FILTER_THRESHOLD", "0.5")
+app.config["MODEL_FILTER_THRESHOLD"] = os.environ.get("MODEL_FILTER_THRESHOLD", "0.4")
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 

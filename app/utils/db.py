@@ -532,7 +532,7 @@ class DatabaseManager:
                 "true",
                 "yes",
             )
-            model_threshold = float(os.environ.get("MODEL_FILTER_THRESHOLD", "0.5"))
+            model_threshold = float(os.environ.get("MODEL_FILTER_THRESHOLD", "0.4"))
             classifier_filter = (
                 ClassifierFilter(threshold=model_threshold) if model_enabled else None
             )

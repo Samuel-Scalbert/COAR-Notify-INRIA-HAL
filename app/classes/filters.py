@@ -77,7 +77,7 @@ class ClassifierFilter(Filter):
     flagged and a warning is logged once, so ingestion never breaks.
     """
 
-    def __init__(self, threshold: float = 0.5, model_path: str = _MODEL_PATH):
+    def __init__(self, threshold: float = 0.4, model_path: str = _MODEL_PATH):
         self.threshold = threshold
         self._model_path = os.path.abspath(model_path)
         self._unavailable = False
