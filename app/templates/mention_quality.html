@@ -101,7 +101,7 @@
         <button class="btn-primary" id="reapply-btn">Re-run filter on all mentions</button>
         <p class="note">
           <strong>Re-run</strong> re-scores every stored mention with the current model and
-          rewrites the <code>model_score</code> / <code>model_invalid</code> flags. Use it to
+          rewrites the <code>quality_score</code> / <code>quality_invalid</code> flags. Use it to
           backfill mentions ingested before the model existed, or after retraining the model.
           New documents are scored at ingestion automatically. Flags are only excluded from
           notifications when the filter is <strong>enabled</strong> (see the badge above).
@@ -142,7 +142,7 @@
     function applyStats(data) {
       el.total.textContent = num(data.total_mentions);
       el.scored.textContent = num(data.scored);
-      el.invalid.textContent = num(data.model_invalid);
+      el.invalid.textContent = num(data.quality_invalid);
       el.distinct.textContent = num(data.distinct_names);
       el.threshold.textContent = (data.threshold ?? 0).toFixed(2);
       if (data.enabled) {
@@ -180,7 +180,7 @@
         const res = await fetch(API.reapply, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-          toast(`Re-applied: ${num(data.model_invalid)} of ${num(data.updated)} mentions flagged invalid.`, 'ok');
+          toast(`Re-applied: ${num(data.quality_invalid)} of ${num(data.updated)} mentions flagged invalid.`, 'ok');
           await loadStats();
         } else {
           toast(data.error || 'Re-run failed.', 'err');

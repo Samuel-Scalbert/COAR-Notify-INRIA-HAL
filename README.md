@@ -112,7 +112,7 @@ FLASK_PORT=5000
   [Notification Filtering](#notification-filtering)
 - `MENTION_QUALITY_FILTER_ENABLED`: Enable the Mention Quality Filter (default: `false`); see
   [Mention Quality Filter](#mention-quality-filter)
-- `MENTION_QUALITY_FILTER_THRESHOLD`: Minimum `model_score` (P(valid)) for a name to count as valid (default: `0.4`)
+- `MENTION_QUALITY_FILTER_THRESHOLD`: Minimum `quality_score` (P(valid)) for a name to count as valid (default: `0.4`)
   - The previous names `MODEL_FILTER_ENABLED` / `MODEL_FILTER_THRESHOLD` are deprecated but still honored as a
     fallback (a one-time deprecation warning is logged when they are used).
 
@@ -123,7 +123,7 @@ The system uses ArangoDB with these collections:
 - **Documents Collection** (`documents`): Stores HAL document metadata with unique HAL identifiers
 - **Software Collection** (`software`): Contains extracted software mentions with confidence scores and context.
   Each mention carries a `blacklisted` boolean (see Blacklist below) and, when the Mention Quality Filter is
-  enabled, `model_score` / `model_invalid` (see Mention Quality Filter below)
+  enabled, `quality_score` / `quality_invalid` (see Mention Quality Filter below)
 - **Edge Collection** (`edge_doc_to_software`): Creates relationships between documents and software mentions
 - **Blacklist Collection** (`blacklist`): Persistent set of blacklisted terms (one `name` per document,
   unique-indexed); seeded once from `app/static/data/blacklist.csv` then managed via the API/UI
@@ -136,7 +136,7 @@ The system uses ArangoDB with these collections:
 - **Blacklist Flagging**: Mentions are *flagged* (not dropped) at ingestion; the blacklist is enforced only
   when notifications are sent. The blacklist lives in ArangoDB, so runtime edits survive restarts
 - **Quality Flagging**: When `MENTION_QUALITY_FILTER_ENABLED=true`, mentions are also *flagged* (not dropped) with a
-  `model_score`/`model_invalid` at ingestion; like the blacklist, the filter is enforced only when
+  `quality_score`/`quality_invalid` at ingestion; like the blacklist, the filter is enforced only when
   notifications are sent (see [Mention Quality Filter](#mention-quality-filter))
 - **Verification Tracking**: COAR notifications update `verification_by_author` status
 
@@ -170,7 +170,7 @@ see [Database Schema Documentation](docs/database.md).
 | POST                     | `/api/document`                        | Yes           | Insert document (notifications optional, see `notify`) |
 | **Software Endpoints**   |
 | GET                      | `/api/software`                        | No            | Software collection status               |
-| GET                      | `/api/software/latest`                 | No            | Latest ingested mentions (newest first); `?blacklisted=`/`?model_invalid=` filters |
+| GET                      | `/api/software/latest`                 | No            | Latest ingested mentions (newest first); `?blacklisted=`/`?quality_invalid=` filters |
 | GET                      | `/api/software/name/<name>`            | No            | Software by normalized name              |
 | GET                      | `/api/software/<id_mention>`           | No            | Software mention by ID                   |
 | **Mention Quality Filter** |
@@ -374,14 +374,14 @@ curl -s -X POST \
     - Query Parameters:
         - `limit`: Number of mentions to return (1-100, default: 10)
         - `blacklisted`: `true`/`false` — keep only blacklisted / non-blacklisted mentions (omit for no filter)
-        - `model_invalid`: `true`/`false` — keep only model-invalid / model-valid mentions (omit for no filter)
+        - `quality_invalid`: `true`/`false` — keep only quality-invalid / quality-valid mentions (omit for no filter)
     - Sorted by ingestion time (`created_at`); mentions ingested before this
       field was introduced are not included
-    - Each mention carries its flags and score: `blacklisted`, `model_invalid`, and
-      `model_score` (P(valid) in [0,1], or `null` when never scored — run
+    - Each mention carries its flags and score: `blacklisted`, `quality_invalid`, and
+      `quality_score` (P(valid) in [0,1], or `null` when never scored — run
       `POST /api/mention-quality/reapply` to backfill)
-    - Response: `{ "count", "limit", "filters": { "blacklisted", "model_invalid" },
-      "mentions": [{ "name", "created_at", "blacklisted", "model_invalid", "model_score", "context" }] }`
+    - Response: `{ "count", "limit", "filters": { "blacklisted", "quality_invalid" },
+      "mentions": [{ "name", "created_at", "blacklisted", "quality_invalid", "quality_score", "context" }] }`
 
 #### Get Software by Normalized Name
 
@@ -410,7 +410,7 @@ curl -s "http://localhost:5000/api/software/latest?limit=5" | jq
 curl -s "http://localhost:5000/api/software/latest?limit=10&blacklisted=true" | jq
 
 # Inspect the latest mentions the model flagged invalid (with their scores)
-curl -s "http://localhost:5000/api/software/latest?limit=10&model_invalid=true" | jq
+curl -s "http://localhost:5000/api/software/latest?limit=10&quality_invalid=true" | jq
 
 # Get software by normalized name
 curl -s http://localhost:5000/api/software/name/python | jq
@@ -428,16 +428,16 @@ web UI (linked from the dashboard) shows the current counts and a button to re-r
 by two endpoints:
 
 - **GET `/api/mention-quality/stats`**
-    - Read-only counts: `total_mentions`, `scored`, `model_invalid`, `distinct_names`, plus the active
+    - Read-only counts: `total_mentions`, `scored`, `quality_invalid`, `distinct_names`, plus the active
       `threshold` and whether enforcement is `enabled`. Does not modify data.
 - **POST `/api/mention-quality/reapply`**
-    - Re-scores every stored mention with the current model and rewrites `model_score` / `model_invalid`
+    - Re-scores every stored mention with the current model and rewrites `quality_score` / `quality_invalid`
       at `MENTION_QUALITY_FILTER_THRESHOLD` (default 0.4). Use it to backfill mentions ingested before the filter
       existed, or to propagate a retrained model. Idempotent for a fixed model+threshold; a logged no-op
-      if the model file is unavailable. Returns `{ "status", "updated", "model_invalid", "distinct_scored" }`.
+      if the model file is unavailable. Returns `{ "status", "updated", "quality_invalid", "distinct_scored" }`.
 
 To inspect *which* mentions are flagged, use the `/api/software/latest` filters above
-(`?model_invalid=true`, `?blacklisted=true`).
+(`?quality_invalid=true`, `?blacklisted=true`).
 
 ```sh
 # Current Mention Quality Filter counts
@@ -772,7 +772,7 @@ filter is logged per document.
 
 Independently of the mode filter, mentions flagged `blacklisted` (see [Blacklist Management](#blacklist-management))
 are always excluded from outbound notifications, and — when `MENTION_QUALITY_FILTER_ENABLED=true` — mentions flagged
-`model_invalid` (see [Mention Quality Filter](#mention-quality-filter)) are excluded
+`quality_invalid` (see [Mention Quality Filter](#mention-quality-filter)) are excluded
 too. The order is: blacklist filter → quality filter → per-provider mode filter; each logs how many mentions it
 skips per document.
 
@@ -790,11 +790,11 @@ every mention name as good/junk with a trained model.
   For the full dataset/training/validation methodology, metrics, and throughput, see
   [Mention Quality Filter — Model Training & Validation](docs/validity-classifier.md).
 - **Two stages, like the blacklist** — flag at ingestion, enforce at send:
-  - **Ingestion**: each mention is scored and stamped with `model_score` (P(valid), 0–1) and
-    `model_invalid` (`true` when `model_score < MENTION_QUALITY_FILTER_THRESHOLD`). No mention is dropped.
-  - **Notifications**: mentions flagged `model_invalid` are excluded from what is sent to HAL/SWH.
+  - **Ingestion**: each mention is scored and stamped with `quality_score` (P(valid), 0–1) and
+    `quality_invalid` (`true` when `quality_score < MENTION_QUALITY_FILTER_THRESHOLD`). No mention is dropped.
+  - **Notifications**: mentions flagged `quality_invalid` are excluded from what is sent to HAL/SWH.
 - **Fully toggleable** via `MENTION_QUALITY_FILTER_ENABLED` (default `false`). The flag gates both stages: when off, the
-  model is never loaded, no scoring happens, and any previously stored `model_invalid` flags are ignored at
+  model is never loaded, no scoring happens, and any previously stored `quality_invalid` flags are ignored at
   send time — so enabling/disabling is reversible without re-ingesting. `MENTION_QUALITY_FILTER_THRESHOLD` (default
   `0.4`, F1-optimal) tunes how aggressive the filter is (higher = cleaner output, but drops more borderline real names).
 - **Graceful degradation**: if the model file is missing or fails to load, a warning is logged once and no
@@ -810,7 +810,7 @@ MENTION_QUALITY_FILTER_THRESHOLD=0.6
   scored / flagged counts and re-runs the filter over all stored mentions — use it to backfill mentions
   ingested before the filter existed, or after retraining. Backed by `GET /api/mention-quality/stats` and
   `POST /api/mention-quality/reapply` (see [Mention Quality Filter API](#mention-quality-filter-api)). To
-  review *which* mentions were flagged, use `GET /api/software/latest?model_invalid=true`.
+  review *which* mentions were flagged, use `GET /api/software/latest?quality_invalid=true`.
 
 ### Retraining / scoring (offline)
 

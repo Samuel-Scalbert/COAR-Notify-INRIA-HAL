@@ -237,7 +237,7 @@ page at `/mention-quality` (linked from the dashboard), or its API directly:
 | Method & path                      | Effect                                                      |
 |------------------------------------|-------------------------------------------------------------|
 | `GET /api/mention-quality/stats`   | Read-only: total mentions, how many are scored, how many flagged invalid, distinct names, active threshold, and whether enforcement is on. |
-| `POST /api/mention-quality/reapply` | Re-scores every stored mention and rewrites `model_score` / `model_invalid` at `MENTION_QUALITY_FILTER_THRESHOLD` (default 0.4). |
+| `POST /api/mention-quality/reapply` | Re-scores every stored mention and rewrites `quality_score` / `quality_invalid` at `MENTION_QUALITY_FILTER_THRESHOLD` (default 0.4). |
 
 `reapply` scores the **distinct** names once (batched — see §7) and fans the
 results back to every mention in a single server-side AQL `UPDATE`. It is
