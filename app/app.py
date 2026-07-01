@@ -79,14 +79,15 @@ try:
 except Exception as e:
     print(f"Blacklist: failed to seed from CSV: {e}")
 
-# Ensure the persistent indexes on `software` exist (blacklist/quality flags and
-# created_at drive the dashboard/stats/latest queries). Creation is idempotent;
-# doing it at startup means simply booting the app provisions them, rather than
-# waiting for the next ingestion to touch the collection.
-try:
-    db_manager.check_or_create_collection("software")
-except Exception as e:
-    print(f"Software indexes: failed to ensure: {e}")
+# Ensure the persistent indexes on `software` and `documents` exist (blacklist /
+# quality flags, created_at, and normalizedForm drive the dashboard/stats/latest
+# queries). Creation is idempotent; doing it at startup means simply booting the
+# app provisions them, rather than waiting for the next ingestion.
+for _coll in ("software", "documents"):
+    try:
+        db_manager.check_or_create_collection(_coll)
+    except Exception as e:
+        print(f"{_coll} indexes: failed to ensure: {e}")
 
 
 @app.get("/")

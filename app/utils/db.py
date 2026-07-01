@@ -57,6 +57,9 @@ class DatabaseManager:
         # via document_exists, this is the hard guarantee) and speed up lookups.
         "documents": [
             {"fields": ["file_hal_id"], "unique": True},
+            # Newest-first listing (get_latest_documents) and the per-day documents
+            # histogram both filter/sort on created_at.
+            {"fields": ["created_at"]},
         ],
         # Notifications are filtered by origin and sorted newest-first by received_at.
         "received_notifications": [
@@ -72,11 +75,15 @@ class DatabaseManager:
         # or bucketed by created_at (dashboard stats, per-day histograms, latest
         # filtered listings). Single-field indexes speed each flag/sort on its own;
         # the compound one serves the combined filter-then-sort queries.
+        # normalizedForm powers the distinct-name counts (dashboard + mention-quality),
+        # blacklist match-count, and by-name lookups; quality_score the "scored" count.
         "software": [
             {"fields": ["blacklisted"]},
             {"fields": ["quality_invalid"]},
             {"fields": ["created_at"]},
             {"fields": ["blacklisted", "quality_invalid", "created_at"]},
+            {"fields": ["software_name.normalizedForm"]},
+            {"fields": ["quality_score"]},
         ],
     }
 
@@ -939,10 +946,14 @@ class DatabaseManager:
         stats["notifications_count"] = _count("received_notifications")
 
         # Distinct software names (normalized form), mirroring the distinct
-        # logic used elsewhere for software lookups.
+        # logic used elsewhere for software lookups. The `!= null` filter lets the
+        # sparse persistent index on software_name.normalizedForm serve the distinct
+        # scan instead of a full collection enumeration.
         try:
             result = self.execute_aql_query(
-                "RETURN COUNT(FOR s IN software RETURN DISTINCT s.software_name.normalizedForm)",
+                "RETURN COUNT(FOR s IN software "
+                "FILTER s.software_name.normalizedForm != null "
+                "RETURN DISTINCT s.software_name.normalizedForm)",
                 raw_results=True,
             )
             rows = list(result)
