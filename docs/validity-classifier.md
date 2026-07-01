@@ -1,6 +1,6 @@
 # Mention Quality Filter — Model Training & Validation
 
-This page documents how the model behind the [Mention Quality Filter](../README.md#mention-quality-filter)
+This page documents how the model behind the [Mention Quality Filter](mention-quality-filter.md)
 (`MENTION_QUALITY_FILTER_ENABLED`) was built and evaluated: the labeling methodology, the model, the validation
 protocol, and the measured accuracy and throughput.
 

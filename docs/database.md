@@ -272,7 +272,7 @@ graph TD
 
 Both signals are enforced later, when notifications are built: mentions flagged `blacklisted` (always) or
 `quality_invalid` (only while the Mention Quality Filter is enabled) are excluded from what is sent to providers.
-The two filters are independent — see the [Mention Quality Filter](../README.md#mention-quality-filter)
+The two filters are independent — see the [Mention Quality Filter](mention-quality-filter.md)
 section of the README.
 
 Both flags can be recomputed on already-stored mentions: `reapply_blacklist` (`POST /api/blacklist/reapply`)
@@ -390,7 +390,7 @@ FOR doc IN documents
 
 ## API Endpoints
 
-See [API Documentation](../README.md#api-documentation) in the main README for the full endpoint reference. This file focuses on the database schema only.
+See [API Documentation](api.md) for the full endpoint reference. This file focuses on the database schema only.
 
 ## Performance Considerations
 
@@ -403,15 +403,34 @@ idempotent, so it is safe across restarts and concurrent workers.
 
 | Collection | Field(s) | Type | Purpose |
 |------------|----------|------|---------|
-| `documents` | `file_hal_id` | persistent, **unique** | Prevents duplicate HAL documents at the DB level (in addition to the app-level `document_exists` check) and speeds up lookups by HAL id |
+| `documents` | `file_hal_id` | persistent, **unique** | Prevents duplicate HAL documents at the DB level (in addition to the app-level `document_exists` check) and speeds up lookups by HAL id — including the `get_software_notifications` hot path |
+| `documents` | `created_at` | persistent | Newest-first listing (`get_latest_documents`) and the per-day documents histogram |
 | `received_notifications` | `origin` | persistent | Speeds up filtering notifications by origin (`swh` / `hal` / `unknown`) |
 | `received_notifications` | `received_at` | persistent | Speeds up the newest-first (`SORT ... DESC`) listing |
 | `blacklist` | `name` | persistent, **unique** | Makes term adds idempotent and speeds membership lookups |
+| `software` | `blacklisted` | persistent | Blacklisted-mention filters/counts |
+| `software` | `quality_invalid` | persistent | Quality-invalid filters/counts |
+| `software` | `created_at` | persistent | Newest-first listing (`get_latest_mentions`) and per-day histograms |
+| `software` | `blacklisted, quality_invalid, created_at` | persistent (compound) | Combined filter-then-sort listings (latest mentions narrowed by flag) |
+| `software` | `software_name.normalizedForm` | persistent | Distinct-name counts (dashboard + mention-quality), blacklist match-count, by-name lookups |
+| `software` | `quality_score` | persistent | "Scored" counts for the Mention Quality Filter |
 
-> **Not yet indexed in code:** lookups on `software.software_name.normalizedForm`
-> and filtering on `software.verification_by_author` would benefit from indexes,
-> but these are not currently created automatically. Add entries to
-> `COLLECTION_INDEXES` if/when these access patterns need optimizing.
+The edge collection `edge_doc_to_software` needs no declared index: ArangoDB
+automatically maintains an edge index on `_from` / `_to`, which serves the
+document→software traversal in `get_software_notifications` and
+`get_all_software_for_document`.
+
+**Adding an index:** append a spec to the collection's list in
+`COLLECTION_INDEXES` (`app/utils/db.py`); `_ensure_indexes` creates it
+idempotently on next access. An index is warranted when a query **filters or
+sorts** on a field over a large collection — not merely reads it. For example,
+the `documentContextAttributes` / `mentionContextAttributes` fields are only
+projected (never filtered) by `get_software_notifications`, so they need no
+index.
+
+> **Not yet indexed in code:** filtering on `software.verification_by_author`
+> would benefit from an index, but that access pattern is not currently
+> optimized. Add an entry to `COLLECTION_INDEXES` if/when it does.
 
 ### Deduplication
 - Automatic removal of duplicate software mentions within documents
