@@ -12,8 +12,7 @@ Detailed documentation lives under [`docs/`](docs/):
 | [Configuration & Setup](docs/configuration.md) | Quick start, Docker/local configuration, environment variables |
 | [API Documentation](docs/api.md) | All HTTP endpoints — documents, software, mention quality, blacklist, inbox |
 | [Notification System](docs/notifications.md) | How notifications are built, filtered per provider, and received |
-| [Mention Quality Filter](docs/mention-quality-filter.md) | Optional junk-name classifier: runtime behaviour, tuning, backfill |
-| [Model Training & Validation](docs/validity-classifier.md) | Dataset, training, and metrics for the quality-filter model |
+| [Mention Quality Filter](docs/mention-quality-filter.md) | Optional junk-name classifier: runtime behaviour, tuning, backfill, and the model's training/validation/metrics |
 | [Database Schema](docs/database.md) | Collections, fields, indexes, sample AQL, performance considerations |
 | [Production Deployment](docs/deployment.md) | Running behind an Nginx reverse proxy |
 | [Nginx Reverse Proxy](docs/nginx.md) | Complete Nginx configuration reference |
