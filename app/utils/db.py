@@ -68,6 +68,16 @@ class DatabaseManager:
         "blacklist": [
             {"fields": ["name"], "unique": True},
         ],
+        # Software mentions are filtered by the blacklist / quality flags and sorted
+        # or bucketed by created_at (dashboard stats, per-day histograms, latest
+        # filtered listings). Single-field indexes speed each flag/sort on its own;
+        # the compound one serves the combined filter-then-sort queries.
+        "software": [
+            {"fields": ["blacklisted"]},
+            {"fields": ["quality_invalid"]},
+            {"fields": ["created_at"]},
+            {"fields": ["blacklisted", "quality_invalid", "created_at"]},
+        ],
     }
 
     def __init__(self, host: str, port: int, username: str, password: str, db_name: str):
@@ -557,16 +567,16 @@ class DatabaseManager:
             )
             inserted_count = 0
             blacklisted_count = 0
-            model_invalid_count = 0
+            quality_invalid_count = 0
 
             for mention in mentions:
                 # Check before renaming keys (filters tolerate either key).
                 is_blacklisted = blacklist_filter.filter_mention(mention)
-                # Model score is an independent signal from the blacklist; stored
+                # Quality score is an independent signal from the blacklist; stored
                 # alongside it (never overwriting ``blacklisted``). None when the
-                # model filter is disabled or the name can't be scored.
-                model_score = classifier_filter.score(mention) if classifier_filter else None
-                model_invalid = model_score is not None and model_score < model_threshold
+                # quality filter is disabled or the name can't be scored.
+                quality_score = classifier_filter.score(mention) if classifier_filter else None
+                quality_invalid = quality_score is not None and quality_score < model_threshold
 
                 # Rename fields for consistency
                 mention["software_name"] = mention.pop("software-name")
@@ -574,8 +584,8 @@ class DatabaseManager:
 
                 # Insert software document
                 mention["blacklisted"] = is_blacklisted
-                mention["model_score"] = model_score
-                mention["model_invalid"] = model_invalid
+                mention["quality_score"] = quality_score
+                mention["quality_invalid"] = quality_invalid
                 mention["created_at"] = now_iso
                 software_document = software_collection.createDocument(mention)
                 software_document.save()
@@ -589,12 +599,12 @@ class DatabaseManager:
                 inserted_count += 1
                 if is_blacklisted:
                     blacklisted_count += 1
-                if model_invalid:
-                    model_invalid_count += 1
+                if quality_invalid:
+                    quality_invalid_count += 1
 
             logger.info(
                 f"Inserted {inserted_count} software mentions "
-                f"({blacklisted_count} blacklisted, {model_invalid_count} model-invalid) "
+                f"({blacklisted_count} blacklisted, {quality_invalid_count} quality-invalid) "
                 f"for document with ID: {document_id}"
             )
             return True
@@ -628,7 +638,7 @@ class DatabaseManager:
                             used:    LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.used.value    == true]) > 0,
                             shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.shared.value  == true]) > 0,
                             blacklisted: LENGTH(mentionsGroup[* FILTER CURRENT.mention.blacklisted == true]) > 0,
-                            model_invalid: LENGTH(mentionsGroup[* FILTER CURRENT.mention.model_invalid == true]) > 0
+                            quality_invalid: LENGTH(mentionsGroup[* FILTER CURRENT.mention.quality_invalid == true]) > 0
                         }
             """
 
@@ -698,7 +708,7 @@ class DatabaseManager:
         Read-only stats on the Mention Quality Filter flags across all mentions.
 
         Reports how many stored software mentions have been scored
-        (``model_score`` present) and how many are currently flagged invalid,
+        (``quality_score`` present) and how many are currently flagged invalid,
         plus the distinct-name count. The active ``threshold`` and ``enabled``
         state are surfaced too, so the management page can show whether the flag
         is actually enforced (it is only acted on at send time when
@@ -708,7 +718,7 @@ class DatabaseManager:
         stats: dict[str, Any] = {
             "total_mentions": 0,
             "scored": 0,
-            "model_invalid": 0,
+            "quality_invalid": 0,
             "distinct_names": 0,
             "threshold": self._quality_threshold(),
             "enabled": self._quality_enabled(),
@@ -717,8 +727,8 @@ class DatabaseManager:
             query = """
                 RETURN {
                     total_mentions: LENGTH(software),
-                    scored: LENGTH(FOR s IN software FILTER s.model_score != null RETURN 1),
-                    model_invalid: LENGTH(FOR s IN software FILTER s.model_invalid == true RETURN 1),
+                    scored: LENGTH(FOR s IN software FILTER s.quality_score != null RETURN 1),
+                    quality_invalid: LENGTH(FOR s IN software FILTER s.quality_invalid == true RETURN 1),
                     distinct_names: LENGTH(
                         FOR s IN software
                             FILTER s.software_name.normalizedForm != null
@@ -734,15 +744,15 @@ class DatabaseManager:
 
     def reapply_mention_quality(self, threshold: float | None = None) -> dict[str, int]:
         """
-        Recompute ``model_score`` and ``model_invalid`` on every stored mention.
+        Recompute ``quality_score`` and ``quality_invalid`` on every stored mention.
 
-        Backfills the structural-validity flags on mentions ingested before the
-        model existed (or while it was disabled), and re-scores everything when
-        the model is retrained. Because the classifier keys only off the
-        normalized name, distinct names are scored once (batched) and the result
-        is fanned back out to every mention in a single server-side AQL UPDATE.
+        Backfills the quality flags on mentions ingested before the model existed
+        (or while it was disabled), and re-scores everything when the model is
+        retrained. Because the classifier keys only off the normalized name,
+        distinct names are scored once (batched) and the result is fanned back out
+        to every mention in a single server-side AQL UPDATE.
 
-        The ``model_invalid`` formula matches the ingestion path exactly
+        The ``quality_invalid`` formula matches the ingestion path exactly
         (``score is not None and score < threshold``, see insert_document_as_json).
         Flags are written unconditionally; enforcement stays gated by
         MENTION_QUALITY_FILTER_ENABLED at send time. If the model file is unavailable the
@@ -753,13 +763,13 @@ class DatabaseManager:
                 MENTION_QUALITY_FILTER_THRESHOLD (0.4).
 
         Returns:
-            Dict with ``updated`` (mentions touched), ``model_invalid`` (how many
+            Dict with ``updated`` (mentions touched), ``quality_invalid`` (how many
             ended up flagged), and ``distinct_scored`` (distinct names scored).
         """
         if threshold is None:
             threshold = self._quality_threshold()
 
-        no_op = {"updated": 0, "model_invalid": 0, "distinct_scored": 0}
+        no_op = {"updated": 0, "quality_invalid": 0, "distinct_scored": 0}
         try:
             # Reuse ClassifierFilter's cached, gracefully-degrading model loader.
             classifier = ClassifierFilter(threshold=threshold)
@@ -791,10 +801,10 @@ class DatabaseManager:
                     LET nm = s.software_name.normalizedForm
                     LET score = nm == null ? null : @scores[nm]
                     UPDATE s WITH {
-                        model_score: score,
-                        model_invalid: score != null && score < @threshold
+                        quality_score: score,
+                        quality_invalid: score != null && score < @threshold
                     } IN software
-                    RETURN NEW.model_invalid
+                    RETURN NEW.quality_invalid
             """
             flags = list(
                 self.execute_aql_query(
@@ -805,12 +815,12 @@ class DatabaseManager:
             )
             result = {
                 "updated": len(flags),
-                "model_invalid": sum(1 for f in flags if f),
+                "quality_invalid": sum(1 for f in flags if f),
                 "distinct_scored": len(names),
             }
             logger.info(
                 f"Reapplied mention quality filter (threshold {threshold}): "
-                f"{result['model_invalid']} of {result['updated']} mentions flagged invalid "
+                f"{result['quality_invalid']} of {result['updated']} mentions flagged invalid "
                 f"({result['distinct_scored']} distinct names scored)"
             )
             return result
@@ -980,7 +990,7 @@ class DatabaseManager:
         Returns a dict with a ``labels`` list (one ``YYYY-MM-DD`` per day, oldest
         first) and seven equal-length series suitable for plotting:
         ``documents`` and ``software`` (by ingestion ``created_at``),
-        ``blacklisted`` and ``model_invalid`` (software mentions flagged by the
+        ``blacklisted`` and ``quality_invalid`` (software mentions flagged by the
         blacklist / Mention Quality Filter, also by ``created_at``), and
         ``notifications`` / ``accepted`` / ``rejected`` (by ``received_at``).
         Days with no activity are zero-filled so the axis is continuous, like
@@ -1002,7 +1012,7 @@ class DatabaseManager:
             "documents": [0] * days,
             "software": [0] * days,
             "blacklisted": [0] * days,
-            "model_invalid": [0] * days,
+            "quality_invalid": [0] * days,
             "notifications": [0] * days,
             "accepted": [0] * days,
             "rejected": [0] * days,
@@ -1040,12 +1050,12 @@ class DatabaseManager:
                         AND SUBSTRING(s.created_at, 0, 10) >= @since
                     COLLECT day = SUBSTRING(s.created_at, 0, 10) INTO group = {
                         blacklisted: s.blacklisted == true,
-                        model_invalid: s.model_invalid == true
+                        quality_invalid: s.quality_invalid == true
                     }
                     RETURN {
                         day: day,
                         blacklisted: LENGTH(group[* FILTER CURRENT.blacklisted]),
-                        model_invalid: LENGTH(group[* FILTER CURRENT.model_invalid])
+                        quality_invalid: LENGTH(group[* FILTER CURRENT.quality_invalid])
                     }
                 """,
                 bind_vars={"since": since},
@@ -1055,7 +1065,7 @@ class DatabaseManager:
                 i = index.get(row["day"])
                 if i is not None:
                     result["blacklisted"][i] = row["blacklisted"]
-                    result["model_invalid"][i] = row["model_invalid"]
+                    result["quality_invalid"][i] = row["quality_invalid"]
         except Exception as e:
             logger.error(f"Failed to build filter-usage timeseries: {e}")
 
@@ -1137,19 +1147,19 @@ class DatabaseManager:
         self,
         limit: int = 10,
         blacklisted: bool | None = None,
-        model_invalid: bool | None = None,
+        quality_invalid: bool | None = None,
     ) -> list[dict[str, Any]]:
         """
         The ``limit`` most recently ingested software mentions, newest first.
 
         Sorted by ``created_at`` like get_latest_documents. Returns the
         normalized software name and ingestion timestamp, the ``blacklisted`` /
-        ``model_invalid`` flags and the raw ``model_score``, plus a ``context``
+        ``quality_invalid`` flags and the raw ``quality_score``, plus a ``context``
         object with the created/used/shared characterization booleans. A mention
         whose softice output lacks ``mentionContextAttributes`` reports all three
         as ``false``.
 
-        Optional ``blacklisted`` / ``model_invalid`` filters narrow the result to
+        Optional ``blacklisted`` / ``quality_invalid`` filters narrow the result to
         mentions with that flag set (``True``) or not set (``False``); ``None``
         (the default) applies no filter. The not-set case uses ``!= true`` so
         legacy mentions that predate a flag (stored as null) count as not-flagged,
@@ -1165,11 +1175,11 @@ class DatabaseManager:
                     if blacklisted
                     else "FILTER s.blacklisted != true"
                 )
-            if model_invalid is not None:
+            if quality_invalid is not None:
                 filters.append(
-                    "FILTER s.model_invalid == true"
-                    if model_invalid
-                    else "FILTER s.model_invalid != true"
+                    "FILTER s.quality_invalid == true"
+                    if quality_invalid
+                    else "FILTER s.quality_invalid != true"
                 )
             filter_clause = "\n                        ".join(filters)
             query = f"""
@@ -1181,8 +1191,8 @@ class DatabaseManager:
                             name: s.software_name.normalizedForm,
                             created_at: s.created_at,
                             blacklisted: s.blacklisted == true,
-                            model_invalid: s.model_invalid == true,
-                            model_score: s.model_score,
+                            quality_invalid: s.quality_invalid == true,
+                            quality_score: s.quality_score,
                             context: {{
                                 created: s.mentionContextAttributes.created.value == true,
                                 used: s.mentionContextAttributes.used.value == true,

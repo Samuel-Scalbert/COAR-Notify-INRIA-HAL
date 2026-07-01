@@ -48,14 +48,14 @@ def latest_software():
     """
     Return the most recently ingested software mentions, newest first.
 
-    Each mention includes the ``blacklisted`` / ``model_invalid`` flags, the
-    ``model_score`` (P(valid), or null when not scored), and a ``context``
+    Each mention includes the ``blacklisted`` / ``quality_invalid`` flags, the
+    ``quality_score`` (P(valid), or null when not scored), and a ``context``
     object with the created/used/shared characterization booleans.
 
     Query params:
       - ``limit`` (1-100, default 10): how many to return.
       - ``blacklisted`` (true/false): keep only blacklisted / non-blacklisted mentions.
-      - ``model_invalid`` (true/false): keep only model-invalid / model-valid mentions.
+      - ``quality_invalid`` (true/false): keep only quality-invalid / quality-valid mentions.
 
     Public (no API key) so it can be linked directly from the dashboard. This
     static rule is matched ahead of ``/api/software/<id_mention>`` by Werkzeug,
@@ -64,16 +64,16 @@ def latest_software():
     limit = request.args.get("limit", default=10, type=int) or 10
     limit = max(1, min(limit, 100))
     blacklisted = _parse_bool_arg("blacklisted")
-    model_invalid = _parse_bool_arg("model_invalid")
+    quality_invalid = _parse_bool_arg("quality_invalid")
     try:
         mentions = get_db().get_latest_mentions(
-            limit=limit, blacklisted=blacklisted, model_invalid=model_invalid
+            limit=limit, blacklisted=blacklisted, quality_invalid=quality_invalid
         )
         return jsonify(
             {
                 "count": len(mentions),
                 "limit": limit,
-                "filters": {"blacklisted": blacklisted, "model_invalid": model_invalid},
+                "filters": {"blacklisted": blacklisted, "quality_invalid": quality_invalid},
                 "mentions": mentions,
             }
         )
@@ -270,7 +270,7 @@ def mention_quality_stats():
 def reapply_mention_quality():
     """
     Re-score every stored software mention with the current model and rewrite the
-    ``model_score`` / ``model_invalid`` flags. Use this to backfill mentions
+    ``quality_score`` / ``quality_invalid`` flags. Use this to backfill mentions
     ingested before the model existed and to propagate a retrained model.
     """
     try:

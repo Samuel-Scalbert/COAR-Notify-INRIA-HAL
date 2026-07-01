@@ -83,8 +83,8 @@ ARANGO_ROOT_PASSWORD=examplepassword
     "shared": {"value": false, "score": 1.0728836059570312e-06}
   },
   "blacklisted": false,
-  "model_score": 0.9381,
-  "model_invalid": false,
+  "quality_score": 0.9381,
+  "quality_invalid": false,
   "verification_by_author": false,
   "created_at": "2026-04-16T07:30:00.000000+00:00"
 }
@@ -107,8 +107,8 @@ ARANGO_ROOT_PASSWORD=examplepassword
 | `mentionContextAttributes` | object | Confidence scores at mention level | Yes |
 | `documentContextAttributes` | object | Confidence scores at document level | Yes |
 | `blacklisted` | boolean | Set at ingestion when the normalized name is on the blacklist; excludes the mention from notifications | No |
-| `model_score` | number\|null | P(valid) in [0,1] from the structural-validity classifier, set at ingestion when `MENTION_QUALITY_FILTER_ENABLED=true` (else `null`) | No |
-| `model_invalid` | boolean | `true` when `model_score` is below `MENTION_QUALITY_FILTER_THRESHOLD`; excludes the mention from notifications while the Mention Quality Filter is enabled | No |
+| `quality_score` | number\|null | P(valid) in [0,1] from the structural-validity classifier, set at ingestion when `MENTION_QUALITY_FILTER_ENABLED=true` (else `null`) | No |
+| `quality_invalid` | boolean | `true` when `quality_score` is below `MENTION_QUALITY_FILTER_THRESHOLD`; excludes the mention from notifications while the Mention Quality Filter is enabled | No |
 | `verification_by_author` | boolean | Author verification status | No |
 | `created_at` | string | ISO-8601 UTC ingestion timestamp | No |
 
@@ -126,8 +126,13 @@ Each attribute has:
 
 #### Indexes
 
-- **Hash Index** on `software_name.normalizedForm` for efficient software lookup
-- **Persistent Index** on `verification_by_author` for filtering verified software
+Ensured at startup / first access from `DatabaseManager.COLLECTION_INDEXES` (all persistent):
+
+- `blacklisted` — filtering blacklisted mentions.
+- `quality_invalid` — filtering Mention Quality Filter–flagged mentions.
+- `created_at` — the newest-first sort (latest mentions) and the per-day histogram/timeseries range.
+- Compound `[blacklisted, quality_invalid, created_at]` — the combined filter-then-sort queries
+  (e.g. `/api/software/latest?quality_invalid=true`).
 
 ---
 
@@ -261,12 +266,12 @@ graph TD
 2. Each mention is checked against the `blacklist` collection and stamped with `blacklisted: true|false`
    (no mention is dropped)
 3. When `MENTION_QUALITY_FILTER_ENABLED=true`, each mention is also scored by the structural-validity classifier
-   and stamped with `model_score` and `model_invalid` (no mention is dropped). When disabled, both are unset.
+   and stamped with `quality_score` and `quality_invalid` (no mention is dropped). When disabled, both are unset.
 4. **All** mentions are stored in the `software` collection
 5. Field normalization occurs (`software-name` → `software_name`)
 
 Both signals are enforced later, when notifications are built: mentions flagged `blacklisted` (always) or
-`model_invalid` (only while the Mention Quality Filter is enabled) are excluded from what is sent to providers.
+`quality_invalid` (only while the Mention Quality Filter is enabled) are excluded from what is sent to providers.
 The two filters are independent — see the [Mention Quality Filter](../README.md#mention-quality-filter)
 section of the README.
 

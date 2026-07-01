@@ -112,14 +112,14 @@ def filter_blacklisted_notifications(
     return [n for n in notifications if not n.get("blacklisted")]
 
 
-def filter_model_invalid_notifications(
+def filter_quality_invalid_notifications(
     notifications: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """
-    Drop notifications the structural classifier flagged invalid — only when the
+    Drop notifications the Mention Quality Filter flagged invalid — only when the
     feature is enabled.
 
-    The 'model_invalid' flag is set per mention at ingestion (see
+    The 'quality_invalid' flag is set per mention at ingestion (see
     ClassifierFilter) and aggregated by software name in
     get_software_notifications. Gated by MENTION_QUALITY_FILTER_ENABLED so the
     filter is fully toggleable: when off, stored flags are ignored and nothing
@@ -133,7 +133,7 @@ def filter_model_invalid_notifications(
     )
     if not enabled:
         return notifications
-    return [n for n in notifications if not n.get("model_invalid")]
+    return [n for n in notifications if not n.get("quality_invalid")]
 
 
 class NotificationType(Enum):
@@ -356,12 +356,12 @@ def send_notifications_to_swh(document_id: str, notifications=None) -> dict[str,
                 f"SWH blacklist filter skipped {blacklisted} of {before_blacklist} software notifications for {document_id}"
             )
 
-        before_model = len(notifications)
-        notifications = filter_model_invalid_notifications(notifications)
-        model_skipped = before_model - len(notifications)
-        if model_skipped:
+        before_quality = len(notifications)
+        notifications = filter_quality_invalid_notifications(notifications)
+        quality_skipped = before_quality - len(notifications)
+        if quality_skipped:
             logger.info(
-                f"SWH model filter skipped {model_skipped} of {before_model} software notifications for {document_id}"
+                f"SWH quality filter skipped {quality_skipped} of {before_quality} software notifications for {document_id}"
             )
 
         filter_mode = current_app.config.get("SWH_NOTIFICATION_FILTER", "all")
@@ -470,12 +470,12 @@ def send_notifications_to_hal(document_id: str, notifications=None) -> dict[str,
                 f"HAL blacklist filter skipped {blacklisted} of {before_blacklist} software notifications for {document_id}"
             )
 
-        before_model = len(notifications)
-        notifications = filter_model_invalid_notifications(notifications)
-        model_skipped = before_model - len(notifications)
-        if model_skipped:
+        before_quality = len(notifications)
+        notifications = filter_quality_invalid_notifications(notifications)
+        quality_skipped = before_quality - len(notifications)
+        if quality_skipped:
             logger.info(
-                f"HAL model filter skipped {model_skipped} of {before_model} software notifications for {document_id}"
+                f"HAL quality filter skipped {quality_skipped} of {before_quality} software notifications for {document_id}"
             )
 
         filter_mode = current_app.config.get("HAL_NOTIFICATION_FILTER", "all")
