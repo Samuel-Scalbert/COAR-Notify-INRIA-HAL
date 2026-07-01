@@ -631,6 +631,12 @@ class DatabaseManager:
             List of notification data
         """
         try:
+            # created/used/shared come from documentContextAttributes (softice's
+            # document-level verdict for the software), NOT mentionContextAttributes
+            # (the per-passage verdict). A descriptive sentence can be all-false at
+            # the mention level while the document as a whole did use/create the
+            # software; the notification must reflect the document-level judgment.
+            # Missing attributes (legacy mentions) evaluate to false, as before.
             query = """
                 FOR doc IN documents
                     FILTER doc.file_hal_id == @document_id
@@ -641,9 +647,9 @@ class DatabaseManager:
                         RETURN {
                             softwareName: softwareName,
                             contexts: mentionsGroup[*].mention.context,
-                            created: LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.created.value == true]) > 0,
-                            used:    LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.used.value    == true]) > 0,
-                            shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.mentionContextAttributes.shared.value  == true]) > 0,
+                            created: LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.created.value == true]) > 0,
+                            used:    LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.used.value    == true]) > 0,
+                            shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.shared.value  == true]) > 0,
                             blacklisted: LENGTH(mentionsGroup[* FILTER CURRENT.mention.blacklisted == true]) > 0,
                             quality_invalid: LENGTH(mentionsGroup[* FILTER CURRENT.mention.quality_invalid == true]) > 0
                         }
