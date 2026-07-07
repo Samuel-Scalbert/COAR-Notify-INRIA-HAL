@@ -136,6 +136,41 @@ def filter_quality_invalid_notifications(
     return [n for n in notifications if not n.get("quality_invalid")]
 
 
+def is_quality_filter_enabled() -> bool:
+    """Whether the Mention Quality Filter is on (mirrors filter_quality_invalid_notifications)."""
+    return str(current_app.config.get("MENTION_QUALITY_FILTER_ENABLED", "false")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def infer_sent_notification_count(distinct_total: int) -> int:
+    """
+    Estimate how many outbound COAR notifications were sent.
+
+    Sent notifications are not persisted, so this estimates them from the distinct
+    software names: ``distinct_total`` minus the names that are blacklisted **or**
+    quality-filtered (the exclusion set from
+    ``DatabaseManager.count_distinct_unnotifiable_software``). ``distinct_total``
+    is the dashboard's already-computed distinct-software count, reused here so we
+    don't scan for it twice.
+
+    It is an approximation: it counts a software name once regardless of how many
+    documents mention it, and it does not model the per-provider created/used/
+    shared mode filters (no-ops under the default ``all`` modes). On failure the
+    excluded count is 0, so the estimate degrades to ``distinct_total``.
+    """
+    try:
+        excluded = get_db().count_distinct_unnotifiable_software(
+            quality_enabled=is_quality_filter_enabled()
+        )
+    except Exception as e:
+        logger.error(f"Failed to infer sent-notification count: {e}")
+        excluded = 0
+    return max(distinct_total - excluded, 0)
+
+
 class NotificationType(Enum):
     """Enumeration of notification types."""
 
