@@ -1,13 +1,70 @@
-# Mention Quality Filter — Model Training & Validation
+# Mention Quality Filter
 
-This page documents how the model behind the [Mention Quality Filter](../README.md#mention-quality-filter)
-(`MENTION_QUALITY_FILTER_ENABLED`) was built and evaluated: the labeling methodology, the model, the validation
-protocol, and the measured accuracy and throughput.
+[← Back to README](../README.md)
+
+The upstream extractor emits a large amount of junk alongside real software names: punctuation runs
+(`**** ****`), repeated-token tables (`d d d d`, `SM SM SM`), sentence fragments, and entity lists. The
+exact-match blacklist can't catch this open-ended garbage, so the optional **Mention Quality Filter** scores
+every mention name as good/junk with a trained model.
+
+This page covers both the **runtime behaviour** (how the filter flags and enforces) and the **model** behind
+it (`MENTION_QUALITY_FILTER_ENABLED`): the labeling methodology, the model, the validation protocol, and the
+measured accuracy and throughput.
+
+---
+
+## Runtime behaviour
+
+- **Model**: character n-gram TF-IDF + logistic regression (`scikit-learn`). Short-string, language-agnostic,
+  ~0.4 ms/mention. On held-out data: macro-F1 ≈ 0.84 (per-class F1: valid 0.91, invalid 0.77), ROC-AUC ≈ 0.93
+  — reported as macro/per-class F1 rather than accuracy because the classes are imbalanced. Shipped at
+  `app/static/data/name_classifier.joblib`. Full methodology and metrics are in
+  [The model](#the-model) below.
+- **Two stages, like the blacklist** — flag at ingestion, enforce at send:
+  - **Ingestion**: each mention is scored and stamped with `quality_score` (P(valid), 0–1) and
+    `quality_invalid` (`true` when `quality_score < MENTION_QUALITY_FILTER_THRESHOLD`). No mention is dropped.
+  - **Notifications**: mentions flagged `quality_invalid` are excluded from what is sent to HAL/SWH.
+- **Fully toggleable** via `MENTION_QUALITY_FILTER_ENABLED` (default `false`). The flag gates both stages: when off, the
+  model is never loaded, no scoring happens, and any previously stored `quality_invalid` flags are ignored at
+  send time — so enabling/disabling is reversible without re-ingesting. `MENTION_QUALITY_FILTER_THRESHOLD` (default
+  `0.4`, F1-optimal) tunes how aggressive the filter is (higher = cleaner output, but drops more borderline real names).
+- **Graceful degradation**: if the model file is missing or fails to load, a warning is logged once and no
+  mention is flagged — ingestion never breaks.
+
+```bash
+# Enable the Mention Quality Filter; drop mentions scoring below 0.6 as P(valid)
+MENTION_QUALITY_FILTER_ENABLED=true
+MENTION_QUALITY_FILTER_THRESHOLD=0.6
+```
+
+### Management and backfill
+
+New mentions are scored automatically at ingestion (when `MENTION_QUALITY_FILTER_ENABLED` is on). To populate
+the flags on mentions ingested **before** the filter existed — or to re-score everything after retraining —
+use the `/mention-quality` web UI (linked from the dashboard), which shows the current scored / flagged counts
+and re-runs the filter over all stored mentions. It is backed by two endpoints (see
+[Mention Quality Filter API](api.md#mention-quality-filter-api)):
+
+| Method & path                      | Effect                                                      |
+|------------------------------------|-------------------------------------------------------------|
+| `GET /api/mention-quality/stats`   | Read-only: total mentions, how many are scored, how many flagged invalid, distinct names, active threshold, and whether enforcement is on. |
+| `POST /api/mention-quality/reapply` | Re-scores every stored mention and rewrites `quality_score` / `quality_invalid` at `MENTION_QUALITY_FILTER_THRESHOLD` (default 0.4). |
+
+`reapply` scores the **distinct** names once (batched — see [Throughput](#7-throughput)) and fans the results
+back to every mention in a single server-side AQL `UPDATE`. It is idempotent for a fixed model+threshold and
+degrades to a logged no-op if the model file is unavailable. Flags are always written; they only affect outbound
+notifications while `MENTION_QUALITY_FILTER_ENABLED` is on. This mirrors the blacklist's
+`POST /api/blacklist/reapply`. To review *which* mentions were flagged, use
+`GET /api/software/latest?quality_invalid=true`.
+
+---
+
+# The model
+
+How the model behind the Mention Quality Filter was built and evaluated.
 
 > All metrics below were measured locally on the development machine (single
 > process, `scikit-learn` 1.9.0, Python 3.11). Timings will vary with hardware.
-
----
 
 ## 1. Motivation
 
@@ -23,8 +80,6 @@ and then abandoned: it plateaued because the decision is partly *semantic*
 (`mclust` is software, `Configuration` is not) and the two error directions need
 opposite fixes — measured at ~44% disagreement with ground truth on a stratified
 sample of the grey zone. We pivoted to a **labeled dataset + learned model**.
-
----
 
 ## 2. Labeling policy (clean-name)
 
@@ -42,8 +97,6 @@ software?"):
 
 The policy is deliberately **knowledge-light** so labeling is consistent and so a
 character-level model can learn it.
-
----
 
 ## 3. Dataset construction
 
@@ -108,8 +161,6 @@ On the 180-row human held-out seed, the LLM pipeline agreed with human labels
 **90%** of the time. Remaining disagreements are the irreducible grey zone (e.g.
 `DNS`, very long descriptive full-names) where reasonable labelers differ.
 
----
-
 ## 4. Model
 
 Trained by `sandbox/train_classifier.py`:
@@ -124,8 +175,6 @@ Trained by `sandbox/train_classifier.py`:
 - **Artifact**: `app/static/data/name_classifier.joblib` (~1.4 MB), loaded once
   per process and cached.
 
----
-
 ## 5. Validation method
 
 - **Hold-out**: stratified 80/20 train/test split (`random_state=42`) →
@@ -134,8 +183,6 @@ Trained by `sandbox/train_classifier.py`:
   estimate.
 - The shipped model is **refit on all 19,889 rows** after evaluation (more data,
   better final model); the metrics below come from the held-out split.
-
----
 
 ## 6. Results — precision / recall / F1
 
@@ -198,8 +245,6 @@ junk caught) at the cost of dropping more borderline real names; the valid-F1 an
 macro-F1 columns show where that trade-off stops paying off (both fall steadily
 above 0.6).
 
----
-
 ## 7. Throughput
 
 Measured by `sandbox/score_mentions.py` over the full 51,634-row CSV:
@@ -213,8 +258,6 @@ The ~130× gap is fixed per-call overhead (vectorization + predict) that amortiz
 across a batch. Even single-call latency (0.4 ms) is negligible versus network/DB
 cost during ingestion. Re-scoring the entire corpus is a ~1-second operation.
 
----
-
 ## 8. Full-corpus application
 
 Scoring all 51,634 mention rows at threshold 0.5:
@@ -227,26 +270,8 @@ Scoring all 51,634 mention rows at threshold 0.5:
 (The valid share is higher than the 73.7% unique-name rate because popular real
 tools — e.g. `ImageJ` — recur thousands of times and dominate the row count.)
 
-### Applying to the stored corpus (backfill / re-score)
-
-New mentions are scored automatically at ingestion (when `MENTION_QUALITY_FILTER_ENABLED`
-is on). To populate the flags on mentions ingested **before** the filter existed
-— or to re-score everything after retraining — use the **Mention Quality Filter**
-page at `/mention-quality` (linked from the dashboard), or its API directly:
-
-| Method & path                      | Effect                                                      |
-|------------------------------------|-------------------------------------------------------------|
-| `GET /api/mention-quality/stats`   | Read-only: total mentions, how many are scored, how many flagged invalid, distinct names, active threshold, and whether enforcement is on. |
-| `POST /api/mention-quality/reapply` | Re-scores every stored mention and rewrites `quality_score` / `quality_invalid` at `MENTION_QUALITY_FILTER_THRESHOLD` (default 0.4). |
-
-`reapply` scores the **distinct** names once (batched — see §7) and fans the
-results back to every mention in a single server-side AQL `UPDATE`. It is
-idempotent for a fixed model+threshold and degrades to a logged no-op if the
-model file is unavailable. Flags are always written; they only affect outbound
-notifications while `MENTION_QUALITY_FILTER_ENABLED` is on. This mirrors the blacklist's
-`POST /api/blacklist/reapply`.
-
----
+The stored-corpus backfill / re-score workflow that consumes this model is
+documented above under [Management and backfill](#management-and-backfill).
 
 ## 9. Known limitations
 
@@ -259,9 +284,16 @@ notifications while `MENTION_QUALITY_FILTER_ENABLED` is on. This mirrors the bla
 - **Policy is structural**, so genuinely novel but oddly-formatted real tools can
   be scored invalid; tune `MENTION_QUALITY_FILTER_THRESHOLD` down to be more permissive.
 
----
+## 10. Reproduction / retraining
 
-## 10. Reproduction
+The model and its labeled dataset are produced by scripts under `sandbox/`:
+
+| File | Role |
+|---|---|
+| `sandbox/training_data.csv` | labeled dataset (`name,label,source`) |
+| `sandbox/train_classifier.py` | training / evaluation / prediction |
+| `sandbox/score_mentions.py` | full-CSV scoring + throughput measurement |
+| `app/static/data/name_classifier.joblib` | trained model shipped with the app |
 
 ```bash
 # (1) deps (already in pyproject runtime deps)
@@ -280,11 +312,4 @@ python sandbox/score_mentions.py --input path/to/DOC_SOFTWARE_MENTIONS.csv
 cp sandbox/name_classifier.joblib app/static/data/name_classifier.joblib
 ```
 
-Artifacts:
-
-| File | Role |
-|---|---|
-| `sandbox/training_data.csv` | labeled dataset (`name,label,source`) |
-| `sandbox/train_classifier.py` | training / evaluation / prediction |
-| `sandbox/score_mentions.py` | full-CSV scoring + throughput measurement |
-| `app/static/data/name_classifier.joblib` | trained model shipped with the app |
+Re-running training over an updated `training_data.csv` is how you improve the model.

@@ -631,12 +631,16 @@ class DatabaseManager:
             List of notification data
         """
         try:
-            # created/used/shared come from documentContextAttributes (softice's
-            # document-level verdict for the software), NOT mentionContextAttributes
-            # (the per-passage verdict). A descriptive sentence can be all-false at
-            # the mention level while the document as a whole did use/create the
-            # software; the notification must reflect the document-level judgment.
-            # Missing attributes (legacy mentions) evaluate to false, as before.
+            # created/used/shared source depends on how many times the software
+            # (by normalizedForm) is mentioned in the document:
+            #   * exactly one mention  -> that mention's mentionContextAttributes
+            #     (the passage-level verdict is the direct evidence when there is
+            #     nothing to aggregate across).
+            #   * two or more mentions -> documentContextAttributes, OR-aggregated
+            #     across the group (softice's document-level verdict, meaningful
+            #     precisely because there are several mentions to reconcile).
+            # Contexts are always aggregated across the whole group. Missing
+            # attributes (legacy mentions) evaluate to false either way.
             query = """
                 FOR doc IN documents
                     FILTER doc.file_hal_id == @document_id
@@ -644,12 +648,19 @@ class DatabaseManager:
                         FILTER edge._from == doc._id
                         LET mention = DOCUMENT(edge._to)
                         COLLECT softwareName = mention.software_name.normalizedForm INTO mentionsGroup
+                        LET onlyMention = FIRST(mentionsGroup).mention
                         RETURN {
                             softwareName: softwareName,
                             contexts: mentionsGroup[*].mention.context,
-                            created: LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.created.value == true]) > 0,
-                            used:    LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.used.value    == true]) > 0,
-                            shared:  LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.shared.value  == true]) > 0,
+                            created: LENGTH(mentionsGroup) == 1
+                                ? onlyMention.mentionContextAttributes.created.value == true
+                                : LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.created.value == true]) > 0,
+                            used: LENGTH(mentionsGroup) == 1
+                                ? onlyMention.mentionContextAttributes.used.value == true
+                                : LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.used.value == true]) > 0,
+                            shared: LENGTH(mentionsGroup) == 1
+                                ? onlyMention.mentionContextAttributes.shared.value == true
+                                : LENGTH(mentionsGroup[* FILTER CURRENT.mention.documentContextAttributes.shared.value == true]) > 0,
                             blacklisted: LENGTH(mentionsGroup[* FILTER CURRENT.mention.blacklisted == true]) > 0,
                             quality_invalid: LENGTH(mentionsGroup[* FILTER CURRENT.mention.quality_invalid == true]) > 0
                         }
