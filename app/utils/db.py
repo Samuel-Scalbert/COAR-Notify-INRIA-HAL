@@ -1069,7 +1069,9 @@ class DatabaseManager:
 
         return stats
 
-    def get_activity_timeseries(self, days: int = 30, quality_enabled: bool = False) -> dict[str, Any]:
+    def get_activity_timeseries(
+        self, days: int = 30, quality_enabled: bool = False
+    ) -> dict[str, Any]:
         """
         Daily activity counts for the last ``days`` days (default 30).
 
