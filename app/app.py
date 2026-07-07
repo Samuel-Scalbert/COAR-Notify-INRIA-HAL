@@ -11,6 +11,10 @@ from app.routes.api_software import api_software_bp
 from app.routes.api_status import api_status_bp
 from app.routes.coar_inbox import coar_inbox_bp
 from app.utils.db import env_with_legacy, get_db, init_db
+from app.utils.notification_handler import (
+    infer_sent_notification_count,
+    is_quality_filter_enabled,
+)
 
 load_dotenv()
 
@@ -96,7 +100,16 @@ def home():
         db_manager = get_db()
         connection_info = db_manager.get_connection_info()
         stats = db_manager.get_dashboard_stats()
-        timeseries = db_manager.get_activity_timeseries(days=30)
+        quality_enabled = is_quality_filter_enabled()
+        timeseries = db_manager.get_activity_timeseries(days=30, quality_enabled=quality_enabled)
+
+        # Sent notifications are not persisted; infer the count as distinct software
+        # names minus the blacklisted-or-quality-filtered ones. Reuses the already
+        # computed distinct-software total. Done in the route rather than
+        # get_dashboard_stats to keep the DB layer free of the Flask-config coupling.
+        stats["notifications_sent_count"] = infer_sent_notification_count(
+            stats["distinct_software_count"]
+        )
 
         return render_template(
             "home.html",

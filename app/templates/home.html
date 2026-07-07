@@ -61,26 +61,28 @@
     }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
+      /* Fixed 5 columns so all overview cards stay on one row; minmax(0,1fr)
+         lets them shrink instead of wrapping on narrower viewports. */
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: .6rem;
       margin: 1rem 0;
     }
     .stat-card {
       background: #f8f9fa;
-      padding: 1.25rem 1rem;
+      padding: .8rem .6rem;
       border-radius: 6px;
       border-left: 4px solid #007bff;
       text-align: center;
     }
     .stat-number {
-      font-size: 2rem;
+      font-size: 1.5rem;
       font-weight: 700;
       color: #007bff;
       line-height: 1.2;
     }
     .stat-label {
       color: #495057;
-      font-size: .9rem;
+      font-size: .78rem;
       margin-top: .25rem;
     }
     .breakdown-grid {
@@ -193,6 +195,10 @@
           <div class="stat-number">{{ stats.notifications_count }}</div>
           <div class="stat-label">Notifications received</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-number">{{ stats.notifications_sent_count }}</div>
+          <div class="stat-label">Notifications sent (inferred)</div>
+        </div>
       </div>
     </section>
 
@@ -233,6 +239,7 @@
         <div class="chart-card"><canvas id="chart-blacklisted"></canvas></div>
         <div class="chart-card"><canvas id="chart-model-invalid"></canvas></div>
         <div class="chart-card"><canvas id="chart-total"></canvas></div>
+        <div class="chart-card"><canvas id="chart-sent"></canvas></div>
         <div class="chart-card"><canvas id="chart-accepted"></canvas></div>
         <div class="chart-card"><canvas id="chart-rejected"></canvas></div>
       </div>
@@ -299,6 +306,7 @@
     lineChart('chart-blacklisted', 'Blacklisted mentions / day', series.blacklisted, '#c62828');
     lineChart('chart-model-invalid', 'Quality-filtered mentions / day', series.quality_invalid, '#b26a00');
     lineChart('chart-total', 'Notifications received', series.notifications, '#007bff');
+    lineChart('chart-sent', 'Notifications sent / day (inferred)', series.sent, '#0d9488');
     lineChart('chart-accepted', 'Accepted', series.accepted, '#2e7d32');
     lineChart('chart-rejected', 'Rejected', series.rejected, '#c62828');
   </script>

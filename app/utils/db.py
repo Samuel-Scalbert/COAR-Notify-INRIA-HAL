@@ -675,6 +675,64 @@ class DatabaseManager:
             logger.error(f"Failed to get software notifications for {document_id}: {e}")
             return []
 
+    def count_distinct_unnotifiable_software(self, quality_enabled: bool = False) -> int:
+        """
+        Count the distinct software names that would get **no** outbound
+        notification — the exclusion set to subtract from the distinct-name total
+        when inferring "notifications sent" (sent = distinct total - this).
+
+        A name is excluded when it is blacklisted **or** (when the Mention Quality
+        Filter is on) quality-filtered, i.e. left with no mention that is both
+        non-blacklisted and non-quality-invalid. Blacklisting is applied per name
+        (all or none of a name's mentions carry the flag), so with the quality
+        filter off the "blacklisted OR filtered" union collapses to just the
+        blacklisted names — a cheap, index-backed distinct count. Only when the
+        quality filter is on do we need the per-name grouping to find names with
+        no surviving mention.
+
+        This works purely on the ``software`` collection (no document/edge
+        traversal) and deliberately ignores the per-provider created/used/shared
+        mode filters (a per-mention notion, not a per-name one; no-ops under the
+        default ``all`` modes).
+
+        Args:
+            quality_enabled: whether the Mention Quality Filter is active
+                (pass MENTION_QUALITY_FILTER_ENABLED).
+
+        Returns:
+            int: distinct excluded software names, or 0 on failure.
+        """
+        try:
+            if not quality_enabled:
+                query = """
+                    RETURN COUNT(
+                        FOR s IN software
+                            FILTER s.blacklisted == true
+                                AND s.software_name.normalizedForm != null
+                            RETURN DISTINCT s.software_name.normalizedForm
+                    )
+                """
+            else:
+                # Union of blacklisted and quality-filtered: group by name and keep
+                # only names with zero mentions surviving both filters.
+                query = """
+                    FOR s IN software
+                        FILTER s.software_name.normalizedForm != null
+                        COLLECT name = s.software_name.normalizedForm
+                            AGGREGATE valid = SUM(
+                                s.blacklisted != true AND s.quality_invalid != true ? 1 : 0
+                            )
+                        FILTER valid == 0
+                        COLLECT WITH COUNT INTO c
+                        RETURN c
+                """
+            rows = list(self.execute_aql_query(query, raw_results=True))
+            return rows[0] if rows else 0
+
+        except Exception as e:
+            logger.error(f"Failed to count distinct unnotifiable software: {e}")
+            return 0
+
     def reapply_blacklist(self, blacklist: set[str]) -> dict[str, int]:
         """
         Recompute the ``blacklisted`` flag on every stored software mention.
@@ -1011,18 +1069,20 @@ class DatabaseManager:
 
         return stats
 
-    def get_activity_timeseries(self, days: int = 30) -> dict[str, Any]:
+    def get_activity_timeseries(self, days: int = 30, quality_enabled: bool = False) -> dict[str, Any]:
         """
         Daily activity counts for the last ``days`` days (default 30).
 
         Returns a dict with a ``labels`` list (one ``YYYY-MM-DD`` per day, oldest
-        first) and seven equal-length series suitable for plotting:
+        first) and eight equal-length series suitable for plotting:
         ``documents`` and ``software`` (by ingestion ``created_at``),
         ``blacklisted`` and ``quality_invalid`` (software mentions flagged by the
-        blacklist / Mention Quality Filter, also by ``created_at``), and
-        ``notifications`` / ``accepted`` / ``rejected`` (by ``received_at``).
-        Days with no activity are zero-filled so the axis is continuous, like
-        coar-viz's 30-day charts.
+        blacklist / Mention Quality Filter, also by ``created_at``),
+        ``notifications`` / ``accepted`` / ``rejected`` (by ``received_at``), and
+        ``sent`` (inferred distinct notifiable software names per ingestion day;
+        honours ``quality_enabled`` for the quality filter, matching the send
+        path). Days with no activity are zero-filled so the axis is continuous,
+        like coar-viz's 30-day charts.
 
         Documents/software only gained a ``created_at`` from this version on, so
         rows ingested earlier are simply absent from the window. Each query is
@@ -1044,6 +1104,7 @@ class DatabaseManager:
             "notifications": [0] * days,
             "accepted": [0] * days,
             "rejected": [0] * days,
+            "sent": [0] * days,
         }
 
         # Documents and software, grouped by their ingestion date (created_at).
@@ -1123,6 +1184,37 @@ class DatabaseManager:
                     result["rejected"][i] = row["rejected"]
         except Exception as e:
             logger.error(f"Failed to build notifications timeseries: {e}")
+
+        # Inferred notifications "sent" per day: distinct notifiable software names
+        # (normalizedForm) among mentions created that day. Notifiable = not
+        # blacklisted and, when the Mention Quality Filter is on, not quality
+        # invalid. Filters on the raw created_at (ISO strings compare
+        # lexicographically) so the created_at index serves the range scan;
+        # SUBSTRING only buckets by day. A name mentioned on several days is
+        # counted on each, so the daily values intentionally do not sum to the
+        # distinct-name total shown on the "Notifications sent" card.
+        try:
+            rows = self.execute_aql_query(
+                """
+                FOR s IN software
+                    FILTER s.created_at >= @since
+                        AND s.software_name.normalizedForm != null
+                        AND s.blacklisted != true
+                        AND (@quality_enabled == false OR s.quality_invalid != true)
+                    COLLECT day = SUBSTRING(s.created_at, 0, 10),
+                            name = s.software_name.normalizedForm
+                    COLLECT d = day WITH COUNT INTO c
+                    RETURN {day: d, count: c}
+                """,
+                bind_vars={"since": since, "quality_enabled": quality_enabled},
+                raw_results=True,
+            )
+            for row in rows:
+                i = index.get(row["day"])
+                if i is not None:
+                    result["sent"][i] = row["count"]
+        except Exception as e:
+            logger.error(f"Failed to build sent-notifications timeseries: {e}")
 
         return result
 
