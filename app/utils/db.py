@@ -84,6 +84,15 @@ class DatabaseManager:
             {"fields": ["blacklisted", "quality_invalid", "created_at"]},
             {"fields": ["software_name.normalizedForm"]},
             {"fields": ["quality_score"]},
+            # Covering index for count_distinct_unnotifiable_software: its per-name
+            # AGGREGATE reads the two flags, so they must be in the index or every
+            # entry costs a full-document fetch (~2M point lookups, 12-23s in prod).
+            # Non-sparse, because the query only guarantees normalizedForm != null
+            # and the optimizer rejects a sparse index unless all fields are non-null.
+            {
+                "fields": ["software_name.normalizedForm", "blacklisted", "quality_invalid"],
+                "sparse": False,
+            },
         ],
     }
 
@@ -256,10 +265,17 @@ class DatabaseManager:
 
         for spec in self.COLLECTION_INDEXES.get(name, []):
             try:
-                collection.ensurePersistentIndex(spec["fields"], unique=spec.get("unique", False))
+                # sparse defaults to True to match pyArango's default, under which
+                # every pre-existing index was built — a different default would make
+                # ensurePersistentIndex create non-sparse duplicates of them all.
+                collection.ensurePersistentIndex(
+                    spec["fields"],
+                    unique=spec.get("unique", False),
+                    sparse=spec.get("sparse", True),
+                )
                 logger.debug(
                     f"Ensured index on {name}.{'.'.join(spec['fields'])} "
-                    f"(unique={spec.get('unique', False)})"
+                    f"(unique={spec.get('unique', False)}, sparse={spec.get('sparse', True)})"
                 )
             except Exception as e:
                 logger.error(f"Failed to ensure index on {name}.{spec['fields']}: {e}")
@@ -715,9 +731,12 @@ class DatabaseManager:
             else:
                 # Union of blacklisted and quality-filtered: group by name and keep
                 # only names with zero mentions surviving both filters.
+                # `> null` (equivalent to != null: null sorts below every value) is a
+                # range condition the covering compound index can serve; with != null
+                # the optimizer falls back to per-document fetches (~10s on prod).
                 query = """
                     FOR s IN software
-                        FILTER s.software_name.normalizedForm != null
+                        FILTER s.software_name.normalizedForm > null
                         COLLECT name = s.software_name.normalizedForm
                             AGGREGATE valid = SUM(
                                 s.blacklisted != true AND s.quality_invalid != true ? 1 : 0
